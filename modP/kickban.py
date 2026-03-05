@@ -284,6 +284,8 @@ class KickBanMixin(MixinMeta):
         in the audit log.
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "kick"):
             return
         author = ctx.author
@@ -375,8 +377,9 @@ class KickBanMixin(MixinMeta):
         Minimum 0 days, maximum 7. If not specified, the defaultdays setting will be used instead.
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "ban"):
-            print('return')
             return
         guild = ctx.guild
         if days is None:
@@ -389,7 +392,8 @@ class KickBanMixin(MixinMeta):
         )
 
         await ctx.send(message)
-        await modplus.notify('ban', f'{user.name} has been banned.')
+        user_name = getattr(user, "name", f"User ID {user.id}")
+        await modplus.notify('ban', f'{user_name} has been banned.')
 
     @commands.command(aliases=["hackban"], usage="<user_ids...> [days] [reason]")
     @commands.guild_only()
@@ -554,7 +558,7 @@ class KickBanMixin(MixinMeta):
                 guild,
                 ctx.message.created_at.replace(tzinfo=timezone.utc),
                 "hackban",
-                user_id,
+                user,
                 author,
                 reason,
                 until=None,
@@ -589,6 +593,8 @@ class KickBanMixin(MixinMeta):
             This will ban the user for 1 day 2 hours 15 minutes and will delete the last 5 days of their messages.
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "ban"):
             return
         guild = ctx.guild
@@ -661,7 +667,8 @@ class KickBanMixin(MixinMeta):
                 unban_time,
             )
             await ctx.send(_("Done. Enough chaos for now."))
-            await modplus.notify('ban', f'{user.name} has been banned.')
+            user_name = getattr(user, "name", f"User ID {user.id}")
+            await modplus.notify('ban', f'{user_name} has been banned.')
 
     @commands.command()
     @commands.guild_only()
@@ -670,6 +677,8 @@ class KickBanMixin(MixinMeta):
     async def softban(self, ctx: commands.Context, user: discord.Member, *, reason: str = None):
         """Kick a user and delete 1 day's worth of their messages."""
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "ban"):
             return
         guild = ctx.guild
@@ -748,7 +757,8 @@ class KickBanMixin(MixinMeta):
                 channel=None,
             )
             await ctx.send(_("Done. Enough chaos."))
-            await modplus.notify('ban', f'{user.name} has been banned.')
+            user_name = getattr(user, "name", f"User ID {user.id}")
+            await modplus.notify('ban', f'{user_name} has been banned.')
 
     @commands.command()
     @commands.guild_only()
@@ -890,6 +900,8 @@ class KickBanMixin(MixinMeta):
          2. enable developer mode, go to Bans in this server's settings, right-
         click the user and select 'Copy ID'."""
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "ban"):
             return
         guild = ctx.guild
