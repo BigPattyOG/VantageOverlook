@@ -43,6 +43,8 @@ class Cleanup(commands.Cog):
     async def pin(self, ctx, message_id):
         """Pin a message (un-pins if already pinned)"""
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
         
@@ -173,6 +175,8 @@ class Cleanup(commands.Cog):
         - `<delete_pinned>` Whether to delete pinned messages or not. Defaults to False
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
         channel = ctx.channel
@@ -231,6 +235,8 @@ class Cleanup(commands.Cog):
         - `<delete_pinned>` Whether to delete pinned messages or not. Defaults to False
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
         channel = ctx.channel
@@ -308,6 +314,8 @@ class Cleanup(commands.Cog):
         author = ctx.author
 
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
 
@@ -356,6 +364,8 @@ class Cleanup(commands.Cog):
         """
 
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
 
@@ -408,6 +418,8 @@ class Cleanup(commands.Cog):
         - `<delete_pinned>` Whether to delete pinned messages or not. Defaults to False
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
 
@@ -459,6 +471,8 @@ class Cleanup(commands.Cog):
         """
 
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
 
@@ -500,6 +514,8 @@ class Cleanup(commands.Cog):
         - `<delete_pinned>` Whether to delete pinned messages or not. Defaults to False
         """
         modplus = ctx.bot.get_cog("ModPlus")
+        if modplus is None:
+            return await ctx.send(_("The ModPlus cog must be loaded to use this command."))
         if not await modplus.action_check(ctx, "deletemessages"):
             return
 
@@ -662,7 +678,8 @@ class Cleanup(commands.Cog):
             await slow_deletion(to_delete)
         
         modplus = ctx.bot.get_cog("ModPlus")
-        await modplus.notify('deletemessages', f"Mass message deletion in {ctx.channel}")
+        if modplus is not None:
+            await modplus.notify('deletemessages', f"Mass message deletion in {ctx.channel}")
 
 
     @cleanup.command(name="duplicates", aliases=["spam"])
@@ -715,4 +732,5 @@ class Cleanup(commands.Cog):
         to_delete.append(ctx.message)
         await mass_purge(to_delete, ctx.channel)
         modplus = ctx.bot.get_cog("ModPlus")
-        await modplus.notify('deletemessages', f"Mass message deletion in {ctx.channel}")
+        if modplus is not None:
+            await modplus.notify('deletemessages', f"Mass message deletion in {ctx.channel}")
