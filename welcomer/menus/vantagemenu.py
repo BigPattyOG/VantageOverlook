@@ -2,7 +2,7 @@ import discord
 
 from .helper import Letter, Symbol
 
-class ThreatLevelMenu():
+class VantageMenu():
     def __init__(self, welcome):
         self.menu = {
     "main": {

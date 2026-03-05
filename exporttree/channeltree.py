@@ -1,6 +1,6 @@
 # channeltree.py
 # Red-DiscordBot cog: Export hierarchical view of categories/channels/threads (TXT | JSON | CSV)
-# Author: tl | Version: 1.1.0
+# Author: VantageOverlook | Version: 1.1.0
 
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ class ChannelTree(commands.Cog):
       • CSV => flat rows with Category/Channel/Thread columns
     """
 
-    __author__ = "tl"
+    __author__ = "VantageOverlook"
     __version__ = "1.1.0"
 
     def __init__(self, bot):

@@ -31,7 +31,7 @@ class Welcomer(commands.Cog):
         self.joined = {}
         self.config = Config.get_conf(self, identifier=251098479837495659987)
         default_global = {
-            "module": "ThreatLevelMenu",
+            "module": "VantageMenu",
             "enabled": False
         }
         self.config.register_global(**default_global)
@@ -52,6 +52,8 @@ class Welcomer(commands.Cog):
 
     async def load_menu_module(self):
         config_menu = await self.config.module()
+        if config_menu == "ThreatLevelMenu":
+            config_menu = "VantageMenu"
         module = importlib.import_module(".menus." + config_menu.lower(), package = 'welcomer')
 
         class_ = getattr(module, config_menu)

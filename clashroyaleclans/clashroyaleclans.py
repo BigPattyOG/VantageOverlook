@@ -18,7 +18,7 @@ from redbot.core.utils.menus import DEFAULT_CONTROLS, menu, start_adding_reactio
 from redbot.core.utils.predicates import MessagePredicate
 
 credits = "Bot by Vantage BotDev Team"
-credits_icon = "https://cdn.discordapp.com/attachments/718649031009501285/854960831102713886/TL-Logo-800x765.png"
+credits_icon = "https://cdn.discordapp.com/attachments/718649031009501285/772704601384157184/image0.png"
 new_recruits_channel_id = 754879780889034933
 global_channel_id = 678115765219622922
 log = logging.getLogger("red.cogs.clashroyaleclans")
@@ -680,7 +680,7 @@ class ClashRoyaleClans(commands.Cog):
 
                 embed = discord.Embed(color=0x0080FF)
                 embed.set_author(
-                    name="New Recruit", icon_url="https://cdn.discordapp.com/attachments/718649031009501285/750779100783837194/TL-Skull-Trans.png"
+                    name="New Recruit", icon_url=credits_icon
                 )
                 embed.add_field(name="Name", value=ign, inline=True)
                 embed.add_field(name="Recruit Code", value=recruit_code, inline=True)
@@ -1173,7 +1173,7 @@ class ClashRoyaleClans(commands.Cog):
             )
             embed.set_author(
                 name="Vantage Family Waiting List",
-                icon_url="https://cdn.discordapp.com/attachments/718649031009501285/750779100783837194/TL-Skull-Trans.png",
+                icon_url=credits_icon,
             )
             embed.set_footer(text=credits, icon_url=credits_icon)
             return await ctx.send(embed=embed)
