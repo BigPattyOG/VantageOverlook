@@ -143,7 +143,8 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         await self._ready.wait()
 
     def cog_unload(self):
-        self._unmute_task.cancel()
+        if self._unmute_task is not None:
+            self._unmute_task.cancel()
         for task in self._unmute_tasks.values():
             task.cancel()
 
@@ -793,7 +794,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         """
         if channel is None:
             await self.config.guild(ctx.guild).notification_channel.clear()
-            await ctx.send(_("Notification channel for unmute issues has been cleard."))
+            await ctx.send(_("Notification channel for unmute issues has been cleared."))
         else:
             await self.config.guild(ctx.guild).notification_channel.set(channel.id)
             await ctx.send(
@@ -1083,7 +1084,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         ctx: commands.Context,
         users: commands.Greedy[discord.Member],
         *,
-        time_and_reason: MuteTime = {},
+        time_and_reason: Optional[MuteTime] = None,
     ):
         """Mute users.
 
@@ -1110,6 +1111,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         if not await self._check_for_mute_role(ctx):
             return
         async with ctx.typing():
+            time_and_reason = time_and_reason or {}
             duration = time_and_reason.get("duration", None)
             reason = time_and_reason.get("reason", None)
             time = ""
@@ -1237,7 +1239,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         ctx: commands.Context,
         users: commands.Greedy[discord.Member],
         *,
-        time_and_reason: MuteTime = {},
+        time_and_reason: Optional[MuteTime] = None,
     ):
         """Mute a user in the current text channel.
 
@@ -1260,6 +1262,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         if ctx.author in users:
             return await ctx.send(_("You cannot mute yourself."))
         async with ctx.typing():
+            time_and_reason = time_and_reason or {}
             duration = time_and_reason.get("duration", None)
             reason = time_and_reason.get("reason", None)
             time = ""
@@ -1302,7 +1305,7 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
                         user, author, guild, _("Channel mute"), reason, duration
                     )
                     async with self.config.member(user).perms_cache() as cache:
-                        cache[channel.id] = success["old_overs"]
+                        cache[str(channel.id)] = success["old_overs"]
                 else:
                     issue_list.append((user, success["reason"]))
 
@@ -1717,7 +1720,10 @@ class Mutes(VoiceMutes, commands.Cog, metaclass=CompositeMetaClass):
         perms_cache = await self.config.member(user).perms_cache()
 
         move_channel = False
-        if channel.id in perms_cache:
+        channel_key = str(channel.id)
+        if channel_key in perms_cache:
+            old_values = perms_cache[channel_key]
+        elif channel.id in perms_cache:
             old_values = perms_cache[channel.id]
         else:
             old_values = {"send_messages": None, "add_reactions": None, "speak": None}

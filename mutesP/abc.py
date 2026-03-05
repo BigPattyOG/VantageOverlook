@@ -23,7 +23,7 @@ class MixinMeta(ABC):
     @abstractmethod
     async def _voice_perm_check(
         ctx: commands.Context, user_voice_state: Optional[discord.VoiceState], **perms: bool
-    ) -> bool:
+    ) -> Tuple[bool, Optional[str]]:
         raise NotImplementedError()
 
     @abstractmethod

@@ -72,7 +72,7 @@ class VoiceMutes(MixinMeta):
         ctx: commands.Context,
         users: commands.Greedy[discord.Member],
         *,
-        time_and_reason: MuteTime = {},
+        time_and_reason: Optional[MuteTime] = None,
     ):
         """Mute a user in their current voice channel.
 
@@ -93,6 +93,7 @@ class VoiceMutes(MixinMeta):
             return await ctx.send(_("You cannot mute me."))
         if ctx.author in users:
             return await ctx.send(_("You cannot mute yourself."))
+        time_and_reason = time_and_reason or {}
         async with ctx.typing():
             success_list = []
             issue_list = []
@@ -151,7 +152,7 @@ class VoiceMutes(MixinMeta):
                         user, author, guild, _("Voice mute"), reason, duration
                     )
                     async with self.config.member(user).perms_cache() as cache:
-                        cache[channel.id] = success["old_overs"]
+                        cache[str(channel.id)] = success["old_overs"]
                 else:
                     issue_list.append((user, success["reason"]))
 
