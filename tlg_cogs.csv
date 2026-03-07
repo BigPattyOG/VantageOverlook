@@ -1,0 +1,43 @@
+Cog,Status,Likely Source Repo,Repo URL,Confidence,Notes
+activitylog,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,High,TrustyJAID activitylog cog
+admin,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+alias,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+antispam,Loaded,Toxic-Cogs,https://github.com/NeuroAssassin/Toxic-Cogs,Medium,NeuroAssassin antispam cog
+audio,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+cleanup,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+cooldown,Loaded,FlameCogs,https://github.com/Flame442/FlameCogs,Medium,Flame442 cooldown cog
+customcom,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+downloader,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+economy,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+editor,Loaded,Laggrons-Cogs,https://github.com/retke/Laggrons-Dumb-Cogs,Medium,Possibly Laggron's editor/instantcmd
+embedmaker,Loaded,Dav-Cogs,https://github.com/Dav-Git/Dav-Cogs,Low,Uncertain - possible match
+exporttree,Loaded,tl,https://github.com/dgarner-cg/tl-cogs,Low,Likely custom TL cog
+extendedmodlog,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,High,Well-known TrustyJAID cog
+filter,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+general,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+infochannel,Loaded,PCXCogs,https://github.com/PhasecoreX/PCXCogs,High,PhasecoreX infochannel cog
+lockdown,Loaded,flare-cogs,https://github.com/flaree/Flare-Cogs,High,Flare lockdown cog
+lseen,Loaded,aikaterna-cogs,https://github.com/aikaterna/aikaterna-cogs,High,Aikaterna lseen (last seen) cog
+maintenance,Loaded,PCXCogs,https://github.com/PhasecoreX/PCXCogs,Medium,PCX maintenance cog
+massrole,Loaded,Laggrons-Cogs,https://github.com/retke/Laggrons-Dumb-Cogs,High,Laggron's massrole cog
+mentionhelp,Loaded,tl,https://github.com/dgarner-cg/tl-cogs,Low,Likely custom TL cog
+mod,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+modlog,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+moreadmin,Loaded,flare-cogs,https://github.com/flaree/Flare-Cogs,Medium,Flare moreadmin cog
+mutes,Loaded,brandons209,https://github.com/brandons209/Red-bot-Cogs,Medium,brandons209 mutes cog
+mutesP,Loaded,tl,https://github.com/dgarner-cg/tl-cogs,Medium,Patched/custom version in TL repo
+partycrash,Loaded,tl,https://github.com/dgarner-cg/tl-cogs,Medium,Likely custom TL cog
+permissions,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+reports,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,Medium,TrustyJAID reports cog
+rolemanagement,Loaded,Dav-Cogs,https://github.com/Dav-Git/Dav-Cogs,Medium,Dav-Git rolemanagement cog
+roletools,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,High,TrustyJAID roletools cog
+serverstats,Loaded,Fixator10-Cogs,https://github.com/fixator10/Fixator10-Cogs,Medium,Fixator serverstats cog
+streamroles,Loaded,PCXCogs,https://github.com/PhasecoreX/PCXCogs,High,PCX streamroles cog
+streams,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,High,TrustyJAID streams cog
+targeter,Loaded,flare-cogs,https://github.com/flaree/Flare-Cogs,High,Flare targeter cog
+ticketer,Loaded,tl,https://github.com/dgarner-cg/tl-cogs,Low,Possibly custom TL cog
+timerole,Loaded,Laggrons-Cogs,https://github.com/retke/Laggrons-Dumb-Cogs,High,Laggron's timerole cog
+translate,Loaded,Trusty-cogs,https://github.com/TrustyJAID/Trusty-cogs,High,TrustyJAID translate cog
+trivia,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
+userlog,Loaded,Fixator10-Cogs,https://github.com/fixator10/Fixator10-Cogs,Medium,Fixator userlog cog
+warnings,Loaded,Red Core,,High,Built-in Red-DiscordBot cog
