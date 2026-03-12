@@ -1,1 +1,1 @@
-# VantageOverlook Cogs
+# VantageOverlook
