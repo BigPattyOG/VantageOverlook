@@ -28,17 +28,14 @@ class HelpRenderer:
         return embed
 
     def default_footer(self, ctx: commands.Context) -> str:
-        return (
-            f"Use {ctx.clean_prefix}help <command>, {ctx.clean_prefix}help admin <command>, "
-            f"or {ctx.clean_prefix}help owner <command>."
-        )
+        return f"Use {ctx.clean_prefix}help <command> for a detailed command page."
 
     def category_label(self, name: str | None) -> str:
         return name or "No Category"
 
     def _category_summary(self, entry: dict) -> str:
         desc = (entry.get("description") or "No description provided.").strip().splitlines()[0]
-        return f"`{len(entry['commands'])}` commands • {desc[:80]}"
+        return f"`{len(entry['commands'])}` command{'s' if len(entry['commands']) != 1 else ''} • {desc[:80]}"
 
     def _bot_stats(self, ctx: commands.Context, categories: list[dict]) -> str:
         guilds = len(getattr(ctx.bot, "guilds", []))
@@ -46,23 +43,23 @@ class HelpRenderer:
         public_commands = sum(len(entry["commands"]) for entry in categories)
         latency_ms = round(getattr(ctx.bot, "latency", 0.0) * 1000)
         return (
-            f"**Servers:** {humanize_number(guilds)}\n"
-            f"**Users:** {humanize_number(unique_users)}\n"
-            f"**Visible commands:** {humanize_number(public_commands)}\n"
-            f"**Latency:** {latency_ms} ms"
+            f"🏢 **Servers:** {humanize_number(guilds)}\n"
+            f"👥 **Users:** {humanize_number(unique_users)}\n"
+            f"⌨️ **Commands:** {humanize_number(public_commands)}\n"
+            f"📶 **Latency:** {latency_ms} ms"
         )
 
     def _server_stats(self, ctx: commands.Context) -> str:
         if not ctx.guild:
-            return "**Context:** Direct messages\n**Tip:** Run this inside a server to see local stats."
+            return "📨 **Context:** Direct messages\n💡 Run inside a server to see local stats."
         text_channels = len(getattr(ctx.guild, "text_channels", []))
         voice_channels = len(getattr(ctx.guild, "voice_channels", []))
         forum_channels = len(getattr(ctx.guild, "forums", [])) if hasattr(ctx.guild, "forums") else 0
         return (
-            f"**Members:** {humanize_number(ctx.guild.member_count or 0)}\n"
-            f"**Roles:** {humanize_number(len(ctx.guild.roles))}\n"
-            f"**Text channels:** {humanize_number(text_channels)}\n"
-            f"**Voice/forums:** {humanize_number(voice_channels + forum_channels)}"
+            f"👤 **Members:** {humanize_number(ctx.guild.member_count or 0)}\n"
+            f"🎭 **Roles:** {humanize_number(len(ctx.guild.roles))}\n"
+            f"💬 **Text:** {humanize_number(text_channels)}\n"
+            f"🔊 **Voice/Forums:** {humanize_number(voice_channels + forum_channels)}"
         )
 
     async def home_embed(
@@ -75,38 +72,43 @@ class HelpRenderer:
         total_pages: int | None = None,
     ) -> discord.Embed:
         total_pages = total_pages or max(1, chunk_count(len(categories), page_size))
+
+        is_owner = await ctx.bot.is_owner(ctx.author)
+        is_admin = bool(ctx.guild and ctx.author.guild_permissions.administrator) or is_owner
+
         embed = await self._base_embed(
             ctx,
-            title="Vantage Help",
+            title="📖 Vantage Help",
             description=(
-                "Welcome to Vantage's help hub.\n"
+                f"Welcome, **{ctx.author.display_name}**! Use the buttons below to browse commands.\n"
                 f"{self.divider}\n"
-                "Page **1** is your dashboard. Use **<** and **>** to move through the public categories.\n"
-                f"Search with `{ctx.clean_prefix}help search <query>`."
+                f"📄 Page **1** is your overview — use **<** and **>** to browse categories.\n"
+                f"🔎 Search with `{ctx.clean_prefix}help search <query>`."
             ),
         )
-        embed.add_field(name="Bot Overview", value=self._bot_stats(ctx, categories), inline=True)
-        embed.add_field(name="This Server", value=self._server_stats(ctx), inline=True)
-        embed.add_field(name=self.divider, value="**Public Categories**", inline=False)
+        embed.add_field(name="📊 Bot Overview", value=self._bot_stats(ctx, categories), inline=True)
+        embed.add_field(name="🏠 This Server", value=self._server_stats(ctx), inline=True)
+        embed.add_field(name=self.divider, value="**📂 Public Categories**", inline=False)
         if categories:
             lines = []
             for offset, entry in enumerate(categories, start=2):
                 label = self.category_label(entry["name"])
                 lines.append(f"**{offset}. {label}**\n{self._category_summary(entry)}")
-            embed.add_field(name="Browse with the buttons", value="\n\n".join(lines), inline=False)
+            embed.add_field(name="Browse using the navigation buttons", value="\n\n".join(lines), inline=False)
         else:
-            embed.add_field(name="Categories", value="No visible categories were found.", inline=False)
-        embed.add_field(
-            name="Quick Paths",
-            value=(
-                "Use the **<** and **>** buttons to browse public categories\n"
-                f"`{ctx.clean_prefix}help <command>` • open a command directly\n"
-                f"`{ctx.clean_prefix}help admin` • admin commands\n"
-                f"`{ctx.clean_prefix}help owner` • bot owner commands"
-            ),
-            inline=False,
-        )
-        embed.set_footer(text=f"1/{total_pages} • {self.default_footer(ctx)}")
+            embed.add_field(name="📂 Categories", value="No visible categories were found.", inline=False)
+
+        quick_paths = [
+            f"`{ctx.clean_prefix}help <command>` — open a specific command",
+            f"`{ctx.clean_prefix}help <category>` — browse a category directly",
+        ]
+        if is_admin or is_owner:
+            quick_paths.append(f"`{ctx.clean_prefix}help admin` — elevated/admin commands")
+        if is_owner:
+            quick_paths.append(f"`{ctx.clean_prefix}help owner` — bot owner commands")
+
+        embed.add_field(name="🔍 Quick Paths", value="\n".join(quick_paths), inline=False)
+        embed.set_footer(text=f"Page 1/{total_pages} • {self.default_footer(ctx)}")
         return embed
 
     async def cog_embed(
@@ -126,26 +128,28 @@ class HelpRenderer:
         current = chunk_slice(commands_list, page, page_size)
         embed = await self._base_embed(
             ctx,
-            title=f"{cog_name}",
-            description=(description or "No description provided.") + f"\n{self.divider}",
+            title=f"📂 {cog_name}",
+            description=(description or "No description provided.").strip().splitlines()[0] + f"\n{self.divider}",
         )
         if current:
             lines = []
             for command in current:
-                lines.append(
-                    f"`{command.qualified_name}`\n{short_doc(command)}"
-                )
-            embed.add_field(name=f"Commands • Page {page + 1}/{total_pages}", value="\n\n".join(lines), inline=False)
+                lines.append(f"• `{command.qualified_name}` — {short_doc(command)}")
+            embed.add_field(
+                name=f"⌨️ Commands — Page {page + 1}/{total_pages}",
+                value="\n".join(lines),
+                inline=False,
+            )
         else:
-            embed.add_field(name="Commands", value="No visible commands were found.", inline=False)
+            embed.add_field(name="⌨️ Commands", value="No visible commands were found.", inline=False)
         embed.add_field(
-            name="Open a Command",
-            value=f"Use `{ctx.clean_prefix}help <command>` for the full command card.",
+            name="💡 How to open a command",
+            value=f"`{ctx.clean_prefix}help <command>` — shows usage, aliases, and details.",
             inline=False,
         )
         footer_page = browser_page + 1 if browser_page is not None else page + 1
         footer_total = browser_total or total_pages
-        embed.set_footer(text=f"{footer_page}/{footer_total} • {self.default_footer(ctx)}")
+        embed.set_footer(text=f"Page {footer_page}/{footer_total} • {self.default_footer(ctx)}")
         return embed
 
     async def scoped_embed(
@@ -160,23 +164,27 @@ class HelpRenderer:
         total_pages = chunk_count(len(commands_list), page_size)
         page = max(0, min(page, total_pages - 1))
         current = chunk_slice(commands_list, page, page_size)
-        title = "Admin Commands" if scope == "admin" else "Owner Commands"
-        description = (
-            "Commands that need elevated server access."
-            if scope == "admin"
-            else "Commands reserved for bot owners."
-        )
+        if scope == "admin":
+            title = "🛡️ Admin Commands"
+            description = "These commands require elevated server permissions to use."
+        else:
+            title = "👑 Owner Commands"
+            description = "These commands are reserved for the bot owner only."
         embed = await self._base_embed(ctx, title=title, description=description + f"\n{self.divider}")
         if current:
             lines = []
             for command in current:
-                lines.append(f"`{command.qualified_name}`\n{short_doc(command)}")
-            embed.add_field(name=f"Commands • Page {page + 1}/{total_pages}", value="\n\n".join(lines), inline=False)
+                lines.append(f"• `{command.qualified_name}` — {short_doc(command)}")
+            embed.add_field(
+                name=f"⌨️ Commands — Page {page + 1}/{total_pages}",
+                value="\n".join(lines),
+                inline=False,
+            )
         else:
-            embed.add_field(name="Commands", value="No visible commands were found.", inline=False)
+            embed.add_field(name="⌨️ Commands", value="No visible commands were found.", inline=False)
         target_hint = f"{ctx.clean_prefix}help {scope} <command>"
-        embed.add_field(name="Open a Command", value=f"Use `{target_hint}` for a detailed page.", inline=False)
-        embed.set_footer(text=f"{page + 1}/{total_pages} • {self.default_footer(ctx)}")
+        embed.add_field(name="💡 Open a Command", value=f"`{target_hint}` — shows full details for a specific command.", inline=False)
+        embed.set_footer(text=f"Page {page + 1}/{total_pages} • {self.default_footer(ctx)}")
         return embed
 
     async def command_embed(
@@ -189,27 +197,35 @@ class HelpRenderer:
         admin_context: bool = False,
     ) -> discord.Embed:
         description = (command.help or short_doc(command)).strip()
-        embed = await self._base_embed(ctx, title=command.qualified_name, description=description)
-        embed.add_field(name="How to Use It", value=box(command_signature(ctx.clean_prefix, command), lang=""), inline=False)
-        details = [f"**Aliases:** {command_aliases(command)}"]
+        embed = await self._base_embed(ctx, title=f"⌨️ {command.qualified_name}", description=description)
+        embed.add_field(
+            name="📋 Usage",
+            value=box(command_signature(ctx.clean_prefix, command), lang=""),
+            inline=False,
+        )
+        details = []
+        aliases = command_aliases(command)
+        if aliases != "No aliases.":
+            details.append(f"**Aliases:** {aliases}")
         if command.cog_name:
             details.append(f"**Category:** {command.cog_name}")
         if command.parent is not None:
-            details.append(f"**Parent:** {command.parent.qualified_name}")
+            details.append(f"**Parent command:** `{command.parent.qualified_name}`")
         scope = command_scope(command)
         if scope == "admin" or admin_context:
-            details.append("**Access:** Admin-only / elevated command")
+            details.append("**Access:** 🛡️ Requires elevated/admin permissions")
         elif scope == "owner":
-            details.append("**Access:** Bot owner only")
-        embed.add_field(name=self.divider, value="\n".join(details), inline=False)
+            details.append("**Access:** 👑 Bot owner only")
+        if details:
+            embed.add_field(name="ℹ️ Details", value="\n".join(details), inline=False)
         if redirect_from and redirect_from.casefold() != command.qualified_name.casefold():
             embed.add_field(
-                name="Closest Match",
-                value=f"I couldn't find `{redirect_from}`, so I opened `{command.qualified_name}` instead.",
+                name="🔀 Closest Match",
+                value=f"No exact match for `{redirect_from}` — showing `{command.qualified_name}` instead.",
                 inline=False,
             )
         if note:
-            embed.add_field(name="What Went Wrong?", value=note, inline=False)
+            embed.add_field(name="⚠️ Usage Issue", value=note, inline=False)
         embed.set_footer(text=self.default_footer(ctx))
         return embed
 
@@ -226,19 +242,37 @@ class HelpRenderer:
         total_pages = chunk_count(len(subcommands), page_size)
         page = max(0, min(page, total_pages - 1))
         current = chunk_slice(subcommands, page, page_size)
-        embed = await self._base_embed(ctx, title=command.qualified_name, description=(command.help or short_doc(command)).strip())
-        embed.add_field(name="How to Use It", value=box(command_signature(ctx.clean_prefix, command), lang=""), inline=False)
-        embed.add_field(name=self.divider, value=f"**Aliases:** {command_aliases(command)}", inline=False)
+        embed = await self._base_embed(
+            ctx,
+            title=f"⌨️ {command.qualified_name}",
+            description=(command.help or short_doc(command)).strip(),
+        )
+        embed.add_field(
+            name="📋 Usage",
+            value=box(command_signature(ctx.clean_prefix, command), lang=""),
+            inline=False,
+        )
+        aliases = command_aliases(command)
+        if aliases != "No aliases.":
+            embed.add_field(name="ℹ️ Aliases", value=aliases, inline=False)
         if redirect_from and redirect_from.casefold() != command.qualified_name.casefold():
-            embed.add_field(name="Closest Match", value=f"I couldn't find `{redirect_from}`, so I opened `{command.qualified_name}` instead.", inline=False)
+            embed.add_field(
+                name="🔀 Closest Match",
+                value=f"No exact match for `{redirect_from}` — showing `{command.qualified_name}` instead.",
+                inline=False,
+            )
         if current:
             lines = []
             for subcommand in current:
-                lines.append(f"`{subcommand.qualified_name}`\n{short_doc(subcommand)}")
-            embed.add_field(name=f"Subcommands • Page {page + 1}/{total_pages}", value="\n\n".join(lines), inline=False)
+                lines.append(f"• `{subcommand.qualified_name}` — {short_doc(subcommand)}")
+            embed.add_field(
+                name=f"📂 Subcommands — Page {page + 1}/{total_pages}",
+                value="\n".join(lines),
+                inline=False,
+            )
         else:
-            embed.add_field(name="Subcommands", value="No visible subcommands were found.", inline=False)
-        embed.set_footer(text=f"{page + 1}/{total_pages} • {self.default_footer(ctx)}")
+            embed.add_field(name="📂 Subcommands", value="No visible subcommands were found.", inline=False)
+        embed.set_footer(text=f"Page {page + 1}/{total_pages} • {self.default_footer(ctx)}")
         return embed
 
     async def search_results_embed(
@@ -256,35 +290,66 @@ class HelpRenderer:
         best = results[0] if results else None
         embed = await self._base_embed(
             ctx,
-            title=f"Help Search • {query}",
+            title=f"🔎 Search Results — {query}",
             description=(
-                "Search across visible commands and categories.\n"
+                f"Found **{len(results)}** result{'s' if len(results) != 1 else ''} matching `{query}`.\n"
                 f"{self.divider}"
             ),
         )
         if best:
-            label = "Category" if best.kind == "cog" else "Command"
+            kind_label = "📂 Category" if best.kind == "cog" else "⌨️ Command"
             embed.add_field(
-                name="Closest Match",
-                value=f"**{best.name}** • {label}\n{best.summary}",
+                name="⭐ Best Match",
+                value=f"{kind_label} — `{best.name}`\n{best.summary}",
                 inline=False,
             )
         if current:
             lines = []
             for result in current:
-                label = "Category" if result.kind == "cog" else "Command"
-                lines.append(f"`{result.name}` • {label}\n{result.summary}")
-            embed.add_field(name=f"Results • Page {page + 1}/{total_pages}", value="\n\n".join(lines), inline=False)
+                kind_label = "📂" if result.kind == "cog" else "⌨️"
+                lines.append(f"{kind_label} `{result.name}` — {result.summary}")
+            embed.add_field(
+                name=f"📋 Results — Page {page + 1}/{total_pages}",
+                value="\n".join(lines),
+                inline=False,
+            )
         else:
-            embed.add_field(name="Results", value="No matching help topics were found.", inline=False)
-        embed.set_footer(text=f"{page + 1}/{total_pages} • {self.default_footer(ctx)}")
+            embed.add_field(name="📋 Results", value="No matching topics were found.", inline=False)
+        embed.set_footer(text=f"Page {page + 1}/{total_pages} • {self.default_footer(ctx)}")
         return embed
 
-    async def not_found_embed(self, ctx: commands.Context, *, query: str, suggestions: Iterable[str] | None = None, note: str | None = None) -> discord.Embed:
-        embed = await self._base_embed(ctx, title="Help Topic Not Found", description=f"I couldn't find a help topic for `{query}`.")
+    async def not_found_embed(
+        self,
+        ctx: commands.Context,
+        *,
+        query: str,
+        suggestions: Iterable[str] | None = None,
+        note: str | None = None,
+    ) -> discord.Embed:
+        embed = discord.Embed(
+            title="❓ Help Topic Not Found",
+            description=(
+                f"No command, category, or alias matched `{query}`.\n"
+                f"Try a shorter search term or check your spelling."
+            ),
+            color=discord.Color.orange(),
+        )
+        if ctx.me:
+            embed.set_author(name=f"{ctx.me.display_name} Help", icon_url=ctx.me.display_avatar.url)
         if note:
-            embed.add_field(name="Details", value=note, inline=False)
+            embed.add_field(name="ℹ️ Details", value=note, inline=False)
         if suggestions:
-            embed.add_field(name="Closest Matches", value="\n".join(f"• `{entry}`" for entry in suggestions), inline=False)
+            suggestion_list = list(suggestions)
+            if suggestion_list:
+                embed.add_field(
+                    name="💡 Did you mean…",
+                    value="\n".join(f"• `{entry}`" for entry in suggestion_list),
+                    inline=False,
+                )
+        embed.add_field(
+            name="🔎 Search Instead",
+            value=f"`{ctx.clean_prefix}help search {query}` — try a fuzzy search.",
+            inline=False,
+        )
         embed.set_footer(text=self.default_footer(ctx))
         return embed

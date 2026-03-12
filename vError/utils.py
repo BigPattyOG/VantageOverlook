@@ -283,34 +283,36 @@ def missing_argument_name(error: Exception) -> Optional[str]:
 
 def internal_error_embed(command_display: str, code: str) -> discord.Embed:
     embed = discord.Embed(
-        title="Internal Error",
+        title="⚠️ Something Went Wrong",
         description=(
-            f"Hmm, looks like `{command_display}` has failed. I'll let the devs know.\n\n"
-            f"**Error code:** `{code}`"
+            f"An unexpected error occurred while running **{command_display}**.\n"
+            f"The development team has been notified automatically.\n\n"
+            f"**Reference code:** `{code}`"
         ),
         color=discord.Color.red(),
     )
+    embed.set_footer(text=f"Error {code} • If this keeps happening, contact server staff.")
     return embed
 
 
 
 def public_error_embed(info: PublicErrorInfo) -> discord.Embed:
     embed = discord.Embed(
-        title=f"Error {info.code}",
-        description=f"**{info.title}**\n{SEPARATOR}",
-        color=discord.Color.green(),
+        title=f"📋 {info.title}",
+        description=f"**Error Code:** `{info.code}`\n{SEPARATOR}",
+        color=discord.Color.orange(),
     )
     if info.command_name:
-        embed.add_field(name="Command", value=f"`{info.command_name}`", inline=True)
-    embed.add_field(name="Group", value=info.group, inline=True)
-    embed.add_field(name="What happened", value=info.summary, inline=False)
+        embed.add_field(name="⌨️ Command", value=f"`{info.command_name}`", inline=True)
+    embed.add_field(name="📂 Group", value=info.group, inline=True)
+    embed.add_field(name="❓ What happened", value=info.summary, inline=False)
     if info.details:
-        embed.add_field(name="Details", value=info.details, inline=False)
-    embed.add_field(name="How to fix it", value=info.fix, inline=False)
+        embed.add_field(name="ℹ️ Details", value=info.details, inline=False)
+    embed.add_field(name="✅ How to fix it", value=info.fix, inline=False)
     if info.syntax:
-        embed.add_field(name="Syntax", value=f"```\n{info.syntax}\n```", inline=False)
+        embed.add_field(name="📝 Correct syntax", value=f"```\n{info.syntax}\n```", inline=False)
     if info.example:
-        embed.add_field(name="Example", value=f"```\n{info.example}\n```", inline=False)
+        embed.add_field(name="💡 Example", value=f"```\n{info.example}\n```", inline=False)
     embed.set_footer(text=f"Family: {info.group} • Slot: {info.slot}")
     return embed
 
@@ -318,21 +320,24 @@ def public_error_embed(info: PublicErrorInfo) -> discord.Embed:
 
 def internal_lookup_embed(code: str) -> discord.Embed:
     return discord.Embed(
-        title=f"Error {code}",
+        title=f"🔴 Internal Error — {code}",
         description=(
-            "If you got this error, it means that an internal error with Vantage has occurred.\n"
-            "Our developers should have been notified of this error and will fix it as soon as possible.\n\n"
-            "We apologise for the inconvenience this may cause."
+            "An unexpected internal error has occurred.\n\n"
+            "Our developers have been notified and will investigate as soon as possible.\n"
+            "We apologise for the inconvenience.\n\n"
+            f"**Reference code:** `{code}`"
         ),
         color=discord.Color.red(),
     )
 
 
-
 def not_found_embed(code: str) -> discord.Embed:
     return discord.Embed(
-        title="Unknown Error Code",
-        description=f"I couldn't find any information for `{code}`.",
+        title="❓ Unknown Error Code",
+        description=(
+            f"No information was found for the code `{code}`.\n\n"
+            "Double-check the code and try again. If you believe this is a mistake, contact server staff."
+        ),
         color=discord.Color.orange(),
     )
 
@@ -367,24 +372,30 @@ def fixable_error_reply(ctx: commands.Context, error: Exception, code: str) -> d
     info = public_info_for_context_error(ctx, error)
     if info is None:
         return discord.Embed(
-            title="Command Error",
-            description=f"For more info on this error, run `{ctx.clean_prefix}error {code}`",
+            title="⚠️ Command Error",
+            description=(
+                f"Something went wrong with **{ctx.clean_prefix}{ctx.command.qualified_name if ctx.command else 'command'}**.\n"
+                f"Run `{ctx.clean_prefix}error {code}` for a full explanation."
+            ),
             color=discord.Color.orange(),
         )
 
     embed = discord.Embed(
-        title=info.title,
-        description=f"**{ctx.clean_prefix}{ctx.command.qualified_name if ctx.command else 'command'}**\n{SEPARATOR}",
-        color=discord.Color.green(),
+        title=f"⚠️ {info.title}",
+        description=(
+            f"**Command:** `{ctx.clean_prefix}{ctx.command.qualified_name if ctx.command else 'command'}`\n"
+            f"{SEPARATOR}"
+        ),
+        color=discord.Color.orange(),
     )
-    embed.add_field(name="What went wrong", value=_runtime_detail(ctx, error), inline=False)
-    embed.add_field(name="How to fix it", value=info.fix, inline=False)
+    embed.add_field(name="❓ What went wrong", value=_runtime_detail(ctx, error), inline=False)
+    embed.add_field(name="✅ How to fix it", value=info.fix, inline=False)
     if info.syntax:
-        embed.add_field(name="Try this", value=f"```\n{info.syntax}\n```", inline=False)
+        embed.add_field(name="📝 Correct syntax", value=f"```\n{info.syntax}\n```", inline=False)
     if info.example:
-        embed.add_field(name="Example", value=f"```\n{info.example}\n```", inline=False)
+        embed.add_field(name="💡 Example", value=f"```\n{info.example}\n```", inline=False)
     embed.add_field(
-        name="Need more help?",
+        name="📋 Need more help?",
         value=f"Run `{ctx.clean_prefix}error {code}` for a full breakdown of this error.",
         inline=False,
     )

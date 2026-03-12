@@ -206,18 +206,18 @@ class VErrors(commands.Cog):
         for family_name, entries in grouped.items():
             current: list[str] = []
             for info in entries:
-                label = f"`{info.code}` — **{info.command_name or info.title}**\n{info.summary}"
+                label = f"🔸 `{info.code}` — **{info.command_name or info.title}**\n{info.summary}"
                 test = "\n\n".join(current + [label])
                 if len(test) > 3500 and current:
                     embed = discord.Embed(
-                        title="Public Error Codes",
+                        title="📋 Public Error Codes",
                         description=(
-                            "Use `?error <code>` to open the full explanation and fix steps.\n\n"
-                            f"**Group:** {family_name}"
+                            f"Use `?error <code>` to open the full explanation and fix steps.\n\n"
+                            f"**📂 Group:** {family_name}"
                         ),
-                        color=discord.Color.green(),
+                        color=discord.Color.blurple(),
                     )
-                    embed.add_field(name="Codes", value="\n\n".join(current), inline=False)
+                    embed.add_field(name="Error Codes", value="\n\n".join(current), inline=False)
                     embed.set_footer(text=f"Groups: {len(family_names)} • Public codes: {total_codes}")
                     pages.append(embed)
                     current = [label]
@@ -225,14 +225,14 @@ class VErrors(commands.Cog):
                     current.append(label)
             if current:
                 embed = discord.Embed(
-                    title="Public Error Codes",
+                    title="📋 Public Error Codes",
                     description=(
-                        "Use `?error <code>` to open the full explanation and fix steps.\n\n"
-                        f"**Group:** {family_name}"
+                        f"Use `?error <code>` to open the full explanation and fix steps.\n\n"
+                        f"**📂 Group:** {family_name}"
                     ),
-                    color=discord.Color.green(),
+                    color=discord.Color.blurple(),
                 )
-                embed.add_field(name="Codes", value="\n\n".join(current), inline=False)
+                embed.add_field(name="Error Codes", value="\n\n".join(current), inline=False)
                 embed.set_footer(text=f"Groups: {len(family_names)} • Public codes: {total_codes}")
                 pages.append(embed)
 
@@ -245,10 +245,26 @@ class VErrors(commands.Cog):
         limit = max(1, min(limit, 15))
         entries = (await self.config.internal_errors())[:limit]
         if not entries:
-            await ctx.send("No internal errors are currently stored.")
+            await ctx.send(embed=discord.Embed(
+                title="📋 Recent Internal Errors",
+                description="No internal errors are currently stored.",
+                color=discord.Color.green(),
+            ))
             return
-        lines = [f"`{entry['code']}` • {entry.get('system', 'SYS')} • {entry.get('command_name') or 'Unknown command'} • {entry.get('summary', 'Unknown error')[:60]}" for entry in entries]
-        await ctx.send(embed=discord.Embed(title="Recent Internal Errors", description="\n".join(lines), color=discord.Color.red()))
+        lines = []
+        for entry in entries:
+            lines.append(
+                f"🔴 `{entry['code']}` • **{entry.get('system', 'SYS')}** • "
+                f"`{entry.get('command_name') or 'Unknown command'}` — "
+                f"{entry.get('summary', 'Unknown error')[:60]}"
+            )
+        embed = discord.Embed(
+            title="📋 Recent Internal Errors",
+            description="\n".join(lines),
+            color=discord.Color.red(),
+        )
+        embed.set_footer(text=f"Showing {len(entries)} most recent error{'s' if len(entries) != 1 else ''}")
+        await ctx.send(embed=embed)
 
     @errors_group.command(name="show")
     async def errors_show(self, ctx: commands.Context, code: str) -> None:
@@ -256,16 +272,27 @@ class VErrors(commands.Cog):
         entries = await self.config.internal_errors()
         match = next((entry for entry in entries if entry["code"] == code), None)
         if match is None:
-            await ctx.send(f"I couldn't find an internal error with code `{code}`.")
+            await ctx.send(embed=discord.Embed(
+                title="❓ Error Not Found",
+                description=f"No internal error with code `{code}` was found.",
+                color=discord.Color.orange(),
+            ))
             return
-        embed = discord.Embed(title=f"Internal Error {code}", color=discord.Color.red())
-        embed.add_field(name="System", value=match.get("system") or "Unknown")
-        embed.add_field(name="Kind", value=match.get("kind") or "Unknown")
-        embed.add_field(name="Command", value=match.get("command_name") or "Unknown", inline=False)
-        embed.add_field(name="Location", value=match.get("location") or "Unknown", inline=False)
-        embed.add_field(name="Summary", value=match.get("summary") or "Unknown", inline=False)
-        meta = f"Guild: `{match.get('guild_id')}`\nChannel: `{match.get('channel_id')}`\nUser: `{match.get('user_id')}`"
-        embed.add_field(name="Context", value=meta, inline=False)
+        embed = discord.Embed(
+            title=f"🔴 Internal Error — {code}",
+            color=discord.Color.red(),
+        )
+        embed.add_field(name="🖥️ System", value=f"`{match.get('system') or 'Unknown'}`", inline=True)
+        embed.add_field(name="🏷️ Kind", value=f"`{match.get('kind') or 'Unknown'}`", inline=True)
+        embed.add_field(name="⌨️ Command", value=f"`{match.get('command_name') or 'Unknown'}`", inline=True)
+        embed.add_field(name="📍 Location", value=match.get("location") or "Unknown", inline=False)
+        embed.add_field(name="📋 Summary", value=match.get("summary") or "Unknown", inline=False)
+        meta = (
+            f"Guild: `{match.get('guild_id') or 'N/A'}`\n"
+            f"Channel: `{match.get('channel_id') or 'N/A'}`\n"
+            f"User: `{match.get('user_id') or 'N/A'}`"
+        )
+        embed.add_field(name="📌 Context", value=meta, inline=False)
         await ctx.send(embed=embed)
 
     @errors_group.command(name="traceback")
@@ -295,32 +322,70 @@ class VErrors(commands.Cog):
             if len(matches) >= 10:
                 break
         if not matches:
-            await ctx.send(f"No internal errors matched `{query}`.")
+            await ctx.send(embed=discord.Embed(
+                title="🔎 Error Search",
+                description=f"No internal errors matched `{query}`.",
+                color=discord.Color.orange(),
+            ))
             return
-        lines = [f"`{entry['code']}` • {entry.get('command_name') or 'Unknown'} • {entry.get('summary', 'Unknown')[:70]}" for entry in matches]
-        await ctx.send(embed=discord.Embed(title=f"Search results for {query}", description="\n".join(lines), color=discord.Color.red()))
+        lines = []
+        for entry in matches:
+            lines.append(
+                f"🔴 `{entry['code']}` • `{entry.get('command_name') or 'Unknown'}` — "
+                f"{entry.get('summary', 'Unknown')[:70]}"
+            )
+        embed = discord.Embed(
+            title=f"🔎 Error Search — {query}",
+            description="\n".join(lines),
+            color=discord.Color.red(),
+        )
+        embed.set_footer(text=f"Found {len(matches)} result{'s' if len(matches) != 1 else ''}")
+        await ctx.send(embed=embed)
 
     @errors_group.command(name="stats")
     async def errors_stats(self, ctx: commands.Context) -> None:
         entries = await self.config.internal_errors()
         if not entries:
-            await ctx.send("No internal errors are currently stored.")
+            await ctx.send(embed=discord.Embed(
+                title="📊 Internal Error Stats",
+                description="No internal errors are currently stored.",
+                color=discord.Color.green(),
+            ))
             return
         by_kind = Counter(entry.get("kind", "UNK") for entry in entries)
         by_system = Counter(entry.get("system", "SYS") for entry in entries)
-        embed = discord.Embed(title="Internal Error Stats", color=discord.Color.red())
-        embed.add_field(name="By Kind", value="\n".join(f"`{kind}`: {count}" for kind, count in by_kind.most_common()) or "None")
-        embed.add_field(name="By System", value="\n".join(f"`{system}`: {count}" for system, count in by_system.most_common()) or "None")
-        embed.set_footer(text=f"Stored reports: {len(entries)}")
+        embed = discord.Embed(
+            title="📊 Internal Error Stats",
+            color=discord.Color.red(),
+        )
+        embed.add_field(
+            name="🏷️ By Kind",
+            value="\n".join(f"`{kind}`: {count}" for kind, count in by_kind.most_common()) or "None",
+            inline=True,
+        )
+        embed.add_field(
+            name="🖥️ By System",
+            value="\n".join(f"`{system}`: {count}" for system, count in by_system.most_common()) or "None",
+            inline=True,
+        )
+        embed.set_footer(text=f"Total stored reports: {len(entries)}")
         await ctx.send(embed=embed)
 
     @errors_group.command(name="clear")
     async def errors_clear(self, ctx: commands.Context) -> None:
         await self.config.internal_errors.set([])
-        await ctx.send("Cleared stored internal error reports.")
+        await ctx.send(embed=discord.Embed(
+            title="✅ Errors Cleared",
+            description="All stored internal error reports have been cleared.",
+            color=discord.Color.green(),
+        ))
 
     @errors_group.command(name="maxstored")
     async def errors_maxstored(self, ctx: commands.Context, amount: int) -> None:
         amount = max(25, min(amount, 1000))
         await self.config.max_internal_errors.set(amount)
-        await ctx.send(f"Now storing up to `{amount}` internal error reports.")
+        await ctx.send(embed=discord.Embed(
+            title="✅ Max Stored Updated",
+            description=f"Now storing up to **{amount}** internal error reports.",
+            color=discord.Color.green(),
+        ))

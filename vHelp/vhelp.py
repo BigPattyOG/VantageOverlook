@@ -490,20 +490,43 @@ class VHelp(commands.Cog):
         },
     )
     async def vhelpset_status(self, ctx: commands.Context) -> None:
-        lines = [
-            f"Formatter active: `{self._formatter_active}`",
-            f"Menu timeout: `{self.menu_timeout}` seconds",
-            f"Home page size: `{self.home_page_size}`",
-            f"Category page size: `{self.cog_page_size}`",
-            f"Group page size: `{self.group_page_size}`",
-            f"Search limit: `{self.search_limit}`",
-            f"Suggestion count: `{self.suggestion_count}`",
-            f"Fuzzy matching: `{self.fuzzy_enabled}`",
-            f"Autocorrect: `{self.autocorrect_enabled}`",
-            f"Indexed commands: `{len(self.command_index)}`",
-            f"Indexed cogs: `{len(self.cog_index)}`",
-        ]
-        await ctx.send("\n".join(lines))
+        formatter_status = "✅ Active" if self._formatter_active else "❌ Inactive"
+        embed = discord.Embed(
+            title="⚙️ VHelp Status",
+            description=f"**Formatter:** {formatter_status}",
+            color=discord.Color.green() if self._formatter_active else discord.Color.red(),
+        )
+        embed.add_field(
+            name="⏱️ Menu Settings",
+            value=(
+                f"Timeout: `{self.menu_timeout}s`\n"
+                f"Home page size: `{self.home_page_size}`\n"
+                f"Category page size: `{self.cog_page_size}`\n"
+                f"Group page size: `{self.group_page_size}`"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="🔎 Search Settings",
+            value=(
+                f"Search limit: `{self.search_limit}`\n"
+                f"Suggestion count: `{self.suggestion_count}`\n"
+                f"Fuzzy matching: `{self.fuzzy_enabled}`\n"
+                f"Autocorrect: `{self.autocorrect_enabled}`"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name="📇 Index",
+            value=(
+                f"Commands indexed: `{len(self.command_index)}`\n"
+                f"Cogs indexed: `{len(self.cog_index)}`"
+            ),
+            inline=False,
+        )
+        if ctx.me:
+            embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
+        await ctx.send(embed=embed)
 
     @vhelpset.command(name="timeout")
     @commands.is_owner()

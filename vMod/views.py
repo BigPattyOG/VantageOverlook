@@ -183,37 +183,71 @@ class VModDashboardView(discord.ui.View):
         snapshot = await self.cog.build_settings_snapshot(self.guild)
         mention_spam = snapshot["mention_spam"]
         embed = discord.Embed(
-            title=f"VMod control panel • {self.guild.name}",
+            title=f"⚙️ VMod Control Panel — {self.guild.name}",
             colour=discord.Colour.blurple(),
         )
-        embed.set_footer(text="Use the dropdown to switch sections. Buttons apply common edits quickly.")
+        if self.guild.icon:
+            embed.set_thumbnail(url=self.guild.icon.url)
+        embed.set_footer(text="Use the dropdown to switch sections • Buttons apply quick edits")
 
         if self.section == "overview":
             repeat_text = (
-                f"after {snapshot['delete_repeats']} identical messages"
+                f"After {snapshot['delete_repeats']} identical messages"
                 if snapshot["delete_repeats"] != -1
-                else "disabled"
+                else "Disabled"
             )
-            embed.description = "The main moderation defaults for this server."
-            embed.add_field(name="Delete repeats", value=repeat_text, inline=False)
-            embed.add_field(name="Hierarchy checks", value="Enabled" if snapshot["respect_hierarchy"] else "Disabled")
-            embed.add_field(name="DM before action", value="Enabled" if snapshot["dm_on_kickban"] else "Disabled")
-            embed.add_field(name="Reinvite on unban", value="Enabled" if snapshot["reinvite_on_unban"] else "Disabled")
-            embed.add_field(name="Track nicknames", value="Enabled" if snapshot["track_nicknames"] else "Disabled")
-            embed.add_field(name="Default ban delete days", value=str(snapshot["default_days"]))
+            embed.description = "📋 **Overview** — Main moderation defaults for this server."
+            embed.add_field(name="🔁 Delete repeats", value=repeat_text, inline=False)
             embed.add_field(
-                name="Default tempban duration",
+                name="🛡️ Hierarchy checks",
+                value="✅ Enabled" if snapshot["respect_hierarchy"] else "❌ Disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="📨 DM before kick/ban",
+                value="✅ Enabled" if snapshot["dm_on_kickban"] else "❌ Disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="🔗 Reinvite on unban",
+                value="✅ Enabled" if snapshot["reinvite_on_unban"] else "❌ Disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="🏷️ Track nicknames",
+                value="✅ Enabled" if snapshot["track_nicknames"] else "❌ Disabled",
+                inline=True,
+            )
+            embed.add_field(name="🗑️ Default ban delete days", value=str(snapshot["default_days"]), inline=True)
+            embed.add_field(
+                name="⏳ Default tempban duration",
                 value=humanize_timedelta(seconds=snapshot["default_tempban_duration"]),
-                inline=False,
+                inline=True,
             )
         elif self.section == "mention_spam":
-            embed.description = "Bot-managed mention-spam thresholds."
-            embed.add_field(name="Warn", value=str(mention_spam["warn"] or "disabled"))
-            embed.add_field(name="Kick", value=str(mention_spam["kick"] or "disabled"))
-            embed.add_field(name="Ban", value=str(mention_spam["ban"] or "disabled"))
-            embed.add_field(name="Strict mode", value="Enabled" if mention_spam["strict"] else "Disabled", inline=False)
+            embed.description = "⚠️ **Mention Spam** — Auto-moderation thresholds for mass mentions."
+            embed.add_field(
+                name="⚠️ Warn",
+                value=f"{mention_spam['warn']} mentions" if mention_spam["warn"] else "disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="👢 Kick",
+                value=f"{mention_spam['kick']} mentions" if mention_spam["kick"] else "disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="🔨 Ban",
+                value=f"{mention_spam['ban']} mentions" if mention_spam["ban"] else "disabled",
+                inline=True,
+            )
+            embed.add_field(
+                name="📐 Strict mode",
+                value="✅ On — duplicate mentions count" if mention_spam["strict"] else "❌ Off — unique mentions only",
+                inline=False,
+            )
         elif self.section == "permissions":
-            embed.description = "Role-based access to moderator actions."
+            embed.description = "🔑 **Permissions** — Role-based access to moderation actions."
             action_roles = snapshot["action_roles"]
             for action_key in ACTION_KEYS:
                 roles = [
@@ -222,17 +256,17 @@ class VModDashboardView(discord.ui.View):
                     if self.guild.get_role(role_id) is not None
                 ]
                 embed.add_field(
-                    name=action_key,
-                    value=humanize_list(roles) if roles else "none",
+                    name=f"`{action_key}`",
+                    value=humanize_list(roles) if roles else "*(none)*",
                     inline=False,
                 )
         elif self.section == "rate_limits":
-            embed.description = "In-memory rate limits applied to configured moderator roles."
+            embed.description = "⏱️ **Rate Limits** — In-memory caps applied to moderator roles."
             for action_key, settings in snapshot["action_rate_limits"].items():
                 embed.add_field(
-                    name=action_key,
-                    value=f"{settings['limit']} actions per {humanize_timedelta(seconds=settings['window'])}",
-                    inline=False,
+                    name=f"`{action_key}`",
+                    value=f"{settings['limit']} action{'s' if settings['limit'] != 1 else ''} per {humanize_timedelta(seconds=settings['window'])}",
+                    inline=True,
                 )
 
         return embed
