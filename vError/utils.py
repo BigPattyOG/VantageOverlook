@@ -1,14 +1,29 @@
 from __future__ import annotations
 
-import re
+import binascii
 from typing import Optional
 
 import discord
 from redbot.core import commands
 
-from .registry import DEFAULT_FAMILIES, ISSUE_DEFINITIONS, PublicErrorInfo, grouped_public_errors, make_public_code
+from .registry import DEFAULT_FAMILIES, ISSUE_DEFINITIONS, PublicErrorInfo, make_public_code
 
 SEPARATOR = "─" * 16
+
+_SLOT_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _auto_slot_from_name(qualified_name: str) -> str:
+    """Derive a stable, unique 2-char slot code from a command's qualified name.
+
+    Uses CRC32 so the slot is deterministic across Python versions. The "00"
+    value is reserved for family-level (no specific command) registry entries,
+    so the hash is mapped into the range [1, 1295] (= 36² − 1, all two-character
+    base-36 combinations minus the reserved "00" slot at index 0).
+    """
+    crc = binascii.crc32(qualified_name.lower().encode()) & 0xFFFF
+    idx = (crc % 1295) + 1  # 1..1295 avoids the reserved "00" (index 0)
+    return _SLOT_CHARSET[idx // 36] + _SLOT_CHARSET[idx % 36]
 
 
 def resolve_system_prefix(ctx: commands.Context) -> str:
@@ -75,7 +90,9 @@ def slot_for_command(command: Optional[commands.Command]) -> str:
         if len(value) == 1:
             return f"0{value}"
         return value[:2]
-    return "00"
+    # No explicit @error_slot — derive a stable slot from the qualified name so
+    # every command gets a unique, reproducible error code without manual decoration.
+    return _auto_slot_from_name(command.qualified_name)
 
 
 
@@ -248,11 +265,9 @@ def public_registry_for_bot(bot, prefix: str = "?") -> dict[str, PublicErrorInfo
             )
             registry[info.code] = info
 
-    # Command-specific entries when slots are declared.
+    # Command-specific entries — all commands now have a derived slot via slot_for_command.
     for command in bot.walk_commands():
         slot = slot_for_command(command)
-        if slot == "00":
-            continue
         family, group = resolve_family_for_command(command)
         for issue_family, issue_variant in ISSUE_DEFINITIONS:
             info = build_public_info_for_command(
@@ -370,11 +385,17 @@ def _runtime_detail(ctx: commands.Context, error: Exception) -> str:
 
 def fixable_error_reply(ctx: commands.Context, error: Exception, code: str) -> discord.Embed:
     info = public_info_for_context_error(ctx, error)
+    # Pre-format the command display once so every branch renders it consistently.
+    if ctx.command:
+        cmd_display = f"`{ctx.clean_prefix}{ctx.command.qualified_name}`"
+    else:
+        cmd_display = "that command"
+
     if info is None:
         return discord.Embed(
             title="⚠️ Command Error",
             description=(
-                f"Something went wrong with **{ctx.clean_prefix}{ctx.command.qualified_name if ctx.command else 'command'}**.\n"
+                f"Something went wrong with {cmd_display}.\n"
                 f"Run `{ctx.clean_prefix}error {code}` for a full explanation."
             ),
             color=discord.Color.orange(),
@@ -382,24 +403,19 @@ def fixable_error_reply(ctx: commands.Context, error: Exception, code: str) -> d
 
     embed = discord.Embed(
         title=f"⚠️ {info.title}",
-        description=(
-            f"**Command:** `{ctx.clean_prefix}{ctx.command.qualified_name if ctx.command else 'command'}`\n"
-            f"{SEPARATOR}"
-        ),
         color=discord.Color.orange(),
     )
-    embed.add_field(name="❓ What went wrong", value=_runtime_detail(ctx, error), inline=False)
+    embed.description = (
+        f"**Command:** {cmd_display}\n"
+        f"{SEPARATOR}\n"
+        f"{_runtime_detail(ctx, error)}"
+    )
     embed.add_field(name="✅ How to fix it", value=info.fix, inline=False)
     if info.syntax:
-        embed.add_field(name="📝 Correct syntax", value=f"```\n{info.syntax}\n```", inline=False)
+        embed.add_field(name="📝 Usage", value=f"```\n{info.syntax}\n```", inline=False)
     if info.example:
         embed.add_field(name="💡 Example", value=f"```\n{info.example}\n```", inline=False)
-    embed.add_field(
-        name="📋 Need more help?",
-        value=f"Run `{ctx.clean_prefix}error {code}` for a full breakdown of this error.",
-        inline=False,
-    )
-    embed.set_footer(text=f"Error code: {code}")
+    embed.set_footer(text=f"Run {ctx.clean_prefix}error {code} for the full breakdown  •  Code: {code}")
     return embed
 
 

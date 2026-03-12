@@ -100,6 +100,7 @@ class HelpNavigator(VHelpBaseView):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= total_pages - 1
         self.page_indicator.label = f"{self.page + 1}/{total_pages}"
+        self.home_button.disabled = (self.mode == "home" and self.page == 0)
 
     def _sync_visibility(self) -> None:
         if self.mode != "search":
@@ -188,6 +189,16 @@ class HelpNavigator(VHelpBaseView):
         self.stop()
         if not interaction.response.is_done():
             await interaction.response.defer()
+
+    @discord.ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, row=1)
+    async def home_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Return to the main help overview page."""
+        self.mode = "home"
+        self.page = 0
+        self.category_index = None
+        self._sync_buttons()
+        self._sync_visibility()
+        await interaction.response.edit_message(embed=await self.render(), view=self)
 
     @discord.ui.button(label="<", style=discord.ButtonStyle.secondary, row=0)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:

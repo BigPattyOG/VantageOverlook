@@ -11,6 +11,7 @@ This file intentionally holds the boring but important plumbing:
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections import defaultdict, deque
 from contextlib import suppress
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ from redbot.core.bot import Red
 from redbot.core.utils import AsyncIter
 
 from .constants import ACTION_KEYS, CASE_TYPES, _
+
+log = logging.getLogger("red.vmod")
 
 
 class VModBase(commands.Cog):
@@ -96,6 +99,43 @@ class VModBase(commands.Cog):
     async def cog_before_invoke(self, ctx: commands.Context) -> None:
         """Wait for startup initialization before commands run."""
         await self._ready.wait()
+
+    async def cog_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+        """Route VMod command errors through VErrors when available, with a graceful fallback."""
+        original = getattr(error, "original", error)
+
+        # Let Red handle its own user-feedback check failures silently.
+        if isinstance(original, commands.UserFeedbackCheckFailure):
+            return
+
+        verrors = self.bot.get_cog("VErrors")
+
+        if verrors is not None:
+            code = None
+            if hasattr(verrors, "get_public_error_code"):
+                code = verrors.get_public_error_code(ctx, original)
+
+            if code is not None:
+                embed = None
+                if hasattr(verrors, "build_fixable_error_embed"):
+                    embed = verrors.build_fixable_error_embed(ctx, original, code)
+                if embed is not None:
+                    try:
+                        await ctx.send(embed=embed)
+                    except discord.HTTPException:
+                        pass
+                    return
+
+            system = verrors.get_system_prefix(ctx) if hasattr(verrors, "get_system_prefix") else "VM"
+            await verrors.reporter.report_command_exception(ctx, original, system)
+            return
+
+        log.exception("Internal VMod error in %s", ctx.command, exc_info=original)
+        cmd_display = f"{ctx.clean_prefix}{ctx.command.qualified_name}" if ctx.command else _("that command")
+        try:
+            await ctx.send(_("Something went wrong while running **{cmd_display}**. Please try again.").format(cmd_display=cmd_display))
+        except discord.HTTPException:
+            pass
 
     def cog_unload(self) -> None:
         """Cancel background tasks when the cog unloads."""
