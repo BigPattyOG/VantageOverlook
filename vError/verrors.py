@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import Counter
 from typing import Optional
 
@@ -75,8 +76,8 @@ class PublicErrorsPager(discord.ui.View):
 
 
 class VErrors(commands.Cog):
-    __author__ = "OpenAI"
-    __version__ = "2.1.0"
+    __author__ = "VantageOverlook"
+    __version__ = "2.2.0"
 
     default_global_settings = {
         "internal_errors": [],
@@ -89,6 +90,9 @@ class VErrors(commands.Cog):
         self.config.register_global(**self.default_global_settings)
         self.reporter = ErrorReporter(bot, self.config)
         self._public_registry_cache: Optional[dict] = None
+
+    async def cog_load(self) -> None:
+        self.rebuild_registry()
 
     def format_help_for_context(self, ctx: commands.Context) -> str:
         pre = super().format_help_for_context(ctx)
@@ -118,6 +122,16 @@ class VErrors(commands.Cog):
         return dict(self._public_registry_cache or {})
 
     @commands.Cog.listener()
+    async def on_cog_add(self, cog: commands.Cog) -> None:
+        """Invalidate the public error registry when a new cog is loaded."""
+        self._public_registry_cache = None
+
+    @commands.Cog.listener()
+    async def on_cog_remove(self, cog: commands.Cog) -> None:
+        """Invalidate the public error registry when a cog is unloaded."""
+        self._public_registry_cache = None
+
+    @commands.Cog.listener()
     async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
         if ctx.command and ctx.command.has_error_handler():
             return
@@ -128,10 +142,15 @@ class VErrors(commands.Cog):
         if isinstance(error, commands.UserFeedbackCheckFailure):
             return
 
-        public_code = public_code_for_error(ctx, error)
+        # Unwrap ConversionError so the inner converter error is classified correctly.
+        unwrapped: Exception = error
+        if isinstance(error, commands.ConversionError) and error.__cause__ is not None:
+            unwrapped = error.__cause__
+
+        public_code = public_code_for_error(ctx, unwrapped)
         if public_code is not None:
             try:
-                await ctx.send(embed=fixable_error_reply(ctx, error, public_code))
+                await ctx.send(embed=fixable_error_reply(ctx, unwrapped, public_code))
             except discord.HTTPException:
                 pass
             return
@@ -169,6 +188,11 @@ class VErrors(commands.Cog):
 
     @commands.command(name="error")
     async def error_lookup(self, ctx: commands.Context, code: str) -> None:
+        """Look up a public or internal error code.
+
+        Provide a code like `VTGGN00A1` to see a full explanation and fix steps,
+        or an internal code like `VTGINT0001` to see a reference card for a logged failure.
+        """
         code = code.upper().strip()
         registry = self.get_public_registry()
         info = registry.get(code)
@@ -203,6 +227,7 @@ class VErrors(commands.Cog):
         pages: list[discord.Embed] = []
         family_names = list(grouped.keys())
         total_codes = sum(len(entries) for entries in grouped.values())
+        prefix = ctx.clean_prefix
         for family_name, entries in grouped.items():
             current: list[str] = []
             for info in entries:
@@ -212,7 +237,7 @@ class VErrors(commands.Cog):
                     embed = discord.Embed(
                         title="📋 Public Error Codes",
                         description=(
-                            f"Use `?error <code>` to open the full explanation and fix steps.\n\n"
+                            f"Use `{prefix}error <code>` to open the full explanation and fix steps.\n\n"
                             f"**📂 Group:** {family_name}"
                         ),
                         color=discord.Color.blurple(),
@@ -227,7 +252,7 @@ class VErrors(commands.Cog):
                 embed = discord.Embed(
                     title="📋 Public Error Codes",
                     description=(
-                        f"Use `?error <code>` to open the full explanation and fix steps.\n\n"
+                        f"Use `{prefix}error <code>` to open the full explanation and fix steps.\n\n"
                         f"**📂 Group:** {family_name}"
                     ),
                     color=discord.Color.blurple(),
@@ -293,6 +318,10 @@ class VErrors(commands.Cog):
             f"User: `{match.get('user_id') or 'N/A'}`"
         )
         embed.add_field(name="📌 Context", value=meta, inline=False)
+        created_at = match.get("created_at")
+        if created_at:
+            ts = int(created_at)
+            embed.add_field(name="🕐 Occurred", value=f"<t:{ts}:F> (<t:{ts}:R>)", inline=False)
         await ctx.send(embed=embed)
 
     @errors_group.command(name="traceback")

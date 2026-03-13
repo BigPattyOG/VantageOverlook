@@ -1,0 +1,13 @@
+{
+    "name": "vMod",
+    "short": "Full-featured moderation cog with cases, modlog, and setup panel.",
+    "description": "vMod is a comprehensive moderation cog that provides kick, ban, tempban, softban, massban, slowmode, rename, userinfo, and name history commands. It writes moderation cases to Red's modlog framework, supports a button/dropdown setup panel, and integrates with vError for consistent error reporting across the moderation system.",
+    "tags": ["moderation", "utility", "admin"],
+    "requirements_to_load": [],
+    "hidden": false,
+    "install_msg": "vMod installed! Run `[p]vmod setup` in your desired log channel to configure the modlog. Use `[p]help vMod` to see all available moderation commands.",
+    "author": ["VantageOverlook"],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 10, 0],
+    "end_user_data_statement": "This cog stores per-guild moderation configuration settings. Moderation case data is written to Red's built-in modlog storage. No additional personal data is stored beyond what Red's modlog captures."
+}

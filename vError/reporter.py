@@ -11,9 +11,13 @@ from redbot.core import Config, commands
 
 from .codes import next_internal_error_code
 from .models import ErrorKind, InternalErrorRecord
+from .renderers import owner_notification_embed
 from .utils import command_display, internal_error_embed
 
 log = logging.getLogger("red.vantage.errors")
+
+# Minimum seconds between owner DM notifications to avoid spam during error bursts.
+_OWNER_NOTIFY_COOLDOWN = 30.0
 
 
 class ErrorReporter:
@@ -22,6 +26,8 @@ class ErrorReporter:
     def __init__(self, bot, config: Config):
         self.bot = bot
         self.config = config
+        # Tracks the last time each owner was notified: {owner_id: timestamp}
+        self._last_notified: dict[int, float] = {}
 
     async def record_internal_error(
         self,
@@ -62,20 +68,14 @@ class ErrorReporter:
         if not owner_ids:
             return
 
-        summary_lines = [
-            f"**Error code:** `{record['code']}`",
-            f"**System:** `{record['system']}`",
-            f"**Kind:** `{record['kind']}`",
-            f"**Command:** `{record.get('command_name') or 'Unknown'}`",
-            f"**Location:** `{record.get('location') or 'Unknown'}`",
-            f"**Summary:** `{record.get('summary') or 'Unknown'}`",
-        ]
-        tb = record.get("traceback_text", "")[:1400]
-        content = "\n".join(summary_lines)
-        if tb:
-            content += f"\n\n```py\n{tb}\n```"
+        now = time.monotonic()
+        embed = owner_notification_embed(record)
 
         for owner_id in owner_ids:
+            last = self._last_notified.get(owner_id, 0.0)
+            if now - last < _OWNER_NOTIFY_COOLDOWN:
+                continue
+
             user = self.bot.get_user(owner_id)
             if user is None:
                 try:
@@ -83,7 +83,10 @@ class ErrorReporter:
                 except discord.HTTPException:
                     continue
             try:
-                await user.send(content)
+                await user.send(embed=embed)
+                self._last_notified[owner_id] = now
+            except discord.Forbidden:
+                log.debug("Cannot DM owner %d (DMs disabled or bot blocked).", owner_id)
             except discord.HTTPException:
                 continue
 
@@ -106,8 +109,9 @@ class ErrorReporter:
             await ctx.send(embed=internal_error_embed(command_display(ctx), code))
         except discord.HTTPException:
             pass
-        latest = (await self.config.internal_errors())[0]
-        await self.notify_owners(latest)
+        entries = await self.config.internal_errors()
+        if entries:
+            await self.notify_owners(entries[0])
         return code
 
     async def report_generic_exception(
@@ -137,8 +141,9 @@ class ErrorReporter:
             user_id=user_id,
         )
         log.exception("Internal %s error %s", kind.value, code, exc_info=error)
-        latest = (await self.config.internal_errors())[0]
-        await self.notify_owners(latest)
+        entries = await self.config.internal_errors()
+        if entries:
+            await self.notify_owners(entries[0])
 
         if interaction is not None:
             embed = internal_error_embed(command_name or "that interaction", code)

@@ -28,7 +28,7 @@ from .utils import (
 from .views import HelpNavigator
 
 try:
-    from verrors.decorators import error_family, error_meta, error_slot
+    from vError.decorators import error_family, error_meta, error_slot
 except Exception:
     def error_family(*args, **kwargs):
         def deco(cls):
@@ -46,15 +46,13 @@ except Exception:
         return deco
 
 try:
-    from verrors.utils import (
+    from vError.utils import (
         fixable_error_reply as verrors_fixable_error_reply,
-        internal_lookup_embed as verrors_internal_lookup_embed,
         public_code_for_error as verrors_public_code_for_error,
         resolve_system_prefix as verrors_resolve_system_prefix,
     )
 except Exception:
     verrors_fixable_error_reply = None
-    verrors_internal_lookup_embed = None
     verrors_public_code_for_error = None
     verrors_resolve_system_prefix = None
 
@@ -181,25 +179,15 @@ class VHelp(commands.Cog):
         if verrors is None:
             log.exception("Internal VHelp interaction error", exc_info=error)
             return
-        code = await verrors.report_interaction_error(
+        # report_interaction_error already sends the error embed to the user via the
+        # reporter, so we must not send another response here.
+        await verrors.report_interaction_error(
             interaction=interaction,
             error=error,
             system="VH",
             command_name="help",
             location="vhelp-view",
         )
-        embed = verrors.build_internal_lookup_embed(code) if hasattr(verrors, "build_internal_lookup_embed") else (verrors_internal_lookup_embed(code) if verrors_internal_lookup_embed is not None else discord.Embed(
-            title="Internal Error",
-            description=f"Error `{code}` occurred.",
-            color=discord.Color.red(),
-        ))
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-        except discord.HTTPException:
-            pass
 
     async def filter_visible_commands(self, ctx: commands.Context, commands_iterable: Iterable[commands.Command]) -> list[commands.Command]:
         visible = []

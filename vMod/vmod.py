@@ -8,7 +8,7 @@ from .moderation import VModModeration
 from .settings import VModSettings
 
 try:
-    from verrors.decorators import error_family
+    from vError.decorators import error_family
 except ImportError:
     def error_family(*args, **kwargs):
         def deco(cls):
