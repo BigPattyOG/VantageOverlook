@@ -1,11 +1,13 @@
 """Shared config, helpers, and background tasks for VMod.
 
 This file intentionally holds the boring but important plumbing:
-- persistent Red config registration
-- in-memory caches for live checks
+- persistent Red config registration (global, guild, member, user)
+- in-memory caches for live checks and rate limits
 - modlog helper methods
-- tempban expiry handling
-- shared permission helpers
+- notification system (modulus-style DM/channel alerts)
+- warn/timeout helpers
+- tempban expiry background task
+- shared permission helpers with role-removal on rate-limit breach
 """
 
 from __future__ import annotations
@@ -22,21 +24,35 @@ from redbot.core import Config, commands, modlog
 from redbot.core.bot import Red
 from redbot.core.utils import AsyncIter
 
-from .constants import ACTION_KEYS, CASE_TYPES, _
+from .constants import ACTION_KEYS, CASE_TYPES, NOTIF_KEYS, _
 
 log = logging.getLogger("red.vmod")
+
+# ---------------------------------------------------------------------------
+# Default config values
+# ---------------------------------------------------------------------------
+
+_DEFAULT_ACTION_RATE_LIMITS = {
+    "kick": {"limit": 5, "window": 3600},
+    "ban": {"limit": 3, "window": 3600},
+    "deletemessages": {"limit": 50, "window": 3600},
+}
 
 
 class VModBase(commands.Cog):
     """Base class that owns config, caches, helper methods, and background tasks."""
 
-    # These defaults are registered once and then available per-scope through Red's Config API.
-    default_global_settings = {
-        "version": "3.0.0",
+    default_global_settings: dict[str, Any] = {
+        "version": "4.0.0",
         "track_all_names": True,
+        # Notification subscriptions — global so any mod in any guild can opt in.
+        # Structure: notifkey -> list of user IDs
+        "notif_users": {key: [] for key in NOTIF_KEYS},
+        # Structure: notifkey -> list of [guild_id, channel_id]
+        "notif_channels": {key: [] for key in NOTIF_KEYS},
     }
 
-    default_guild_settings = {
+    default_guild_settings: dict[str, Any] = {
         "mention_spam": {"ban": None, "kick": None, "warn": None, "strict": False},
         "delete_repeats": -1,
         "respect_hierarchy": True,
@@ -44,26 +60,32 @@ class VModBase(commands.Cog):
         "current_tempbans": [],
         "dm_on_kickban": False,
         "default_days": 0,
-        "default_tempban_duration": 60 * 60 * 24,
+        "default_tempban_duration": 60 * 60 * 24,  # 24 hours
         "track_nicknames": True,
         "action_roles": {key: [] for key in ACTION_KEYS},
-        "action_rate_limits": {
-            "kick": {"limit": 5, "window": 3600},
-            "ban": {"limit": 3, "window": 3600},
-            "editchannel": {"limit": 25, "window": 3600},
+        "action_rate_limits": _DEFAULT_ACTION_RATE_LIMITS,
+        # Roles awarded at warning milestones (matching the modplus rolekeys)
+        "warning_roles": {
+            "warning1": None,   # role ID for first warning
+            "warning2": None,   # role ID for second warning
+            "warning3+": None,  # role ID for three or more warnings
         },
+        # Role used for manual mute when Discord timeouts cannot be applied
+        "muted_role": None,
     }
 
-    default_member_settings = {
+    default_member_settings: dict[str, Any] = {
         "past_nicks": [],
         "banned_until": None,
+        # Each entry: {"reason": str, "moderator_id": int, "timestamp": str}
+        "warnings": [],
     }
 
-    default_user_settings = {
+    default_user_settings: dict[str, Any] = {
         "past_names": [],
     }
 
-    def __init__(self, bot: Red):
+    def __init__(self, bot: Red) -> None:
         self.bot = bot
         self.config = Config.get_conf(self, identifier=4961522000, force_registration=True)
         self.config.register_global(**self.default_global_settings)
@@ -71,7 +93,7 @@ class VModBase(commands.Cog):
         self.config.register_member(**self.default_member_settings)
         self.config.register_user(**self.default_user_settings)
 
-        # In-memory cache for repeat message detection.
+        # In-memory cache for repeat-message detection.
         # Structure: guild_id -> member_id -> deque([recent messages])
         self.repeat_cache: dict[int, defaultdict[int, deque[str]]] = {}
 
@@ -85,6 +107,10 @@ class VModBase(commands.Cog):
         self.init_task = asyncio.create_task(self.initialize())
         self.tban_expiry_task = asyncio.create_task(self.check_tempban_expirations())
 
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
     async def cog_load(self) -> None:
         """Register custom modlog case types when the cog is loaded."""
         for case in CASE_TYPES:
@@ -93,7 +119,6 @@ class VModBase(commands.Cog):
 
     async def initialize(self) -> None:
         """Perform lightweight startup work and then unlock command usage."""
-        # Reserved for future config migrations.
         self._ready.set()
 
     async def cog_before_invoke(self, ctx: commands.Context) -> None:
@@ -104,7 +129,6 @@ class VModBase(commands.Cog):
         """Route VMod command errors through VErrors when available, with a graceful fallback."""
         original = getattr(error, "original", error)
 
-        # Let Red handle its own user-feedback check failures silently.
         if isinstance(original, commands.UserFeedbackCheckFailure):
             return
 
@@ -120,10 +144,8 @@ class VModBase(commands.Cog):
                 if hasattr(verrors, "build_fixable_error_embed"):
                     embed = verrors.build_fixable_error_embed(ctx, original, code)
                 if embed is not None:
-                    try:
+                    with suppress(discord.HTTPException):
                         await ctx.send(embed=embed)
-                    except discord.HTTPException:
-                        pass
                     return
 
             system = verrors.get_system_prefix(ctx) if hasattr(verrors, "get_system_prefix") else "VM"
@@ -132,10 +154,10 @@ class VModBase(commands.Cog):
 
         log.exception("Internal VMod error in %s", ctx.command, exc_info=original)
         cmd_display = f"{ctx.clean_prefix}{ctx.command.qualified_name}" if ctx.command else _("that command")
-        try:
-            await ctx.send(_("Something went wrong while running **{cmd_display}**. Please try again.").format(cmd_display=cmd_display))
-        except discord.HTTPException:
-            pass
+        with suppress(discord.HTTPException):
+            await ctx.send(
+                _("Something went wrong while running **{cmd}**. Please try again.").format(cmd=cmd_display)
+            )
 
     def cog_unload(self) -> None:
         """Cancel background tasks when the cog unloads."""
@@ -161,6 +183,58 @@ class VModBase(commands.Cog):
                     with suppress(ValueError):
                         tempbans.remove(user_id)
 
+        # Remove from notification subscriptions
+        global_data = await self.config.all()
+        notif_users = global_data.get("notif_users", {})
+        changed = False
+        for key, uid_list in notif_users.items():
+            if user_id in uid_list:
+                uid_list.remove(user_id)
+                changed = True
+        if changed:
+            await self.config.notif_users.set(notif_users)
+
+    # ------------------------------------------------------------------
+    # Notification system  (modulus-style)
+    # ------------------------------------------------------------------
+
+    async def notify(self, notif_key: str, embed: discord.Embed) -> None:
+        """Send *embed* to all users and channels subscribed to *notif_key*.
+
+        This mirrors the ``notify()`` method from the modplus (modulus) cog but
+        uses an embed instead of a plain-text payload for a polished look.
+        """
+        if notif_key not in NOTIF_KEYS:
+            return
+
+        global_data = await self.config.all()
+
+        # DM subscribers
+        for user_id in global_data.get("notif_users", {}).get(notif_key, []):
+            try:
+                user = await self.bot.fetch_user(user_id)
+                await user.send(embed=embed)
+            except Exception:
+                pass
+
+        # Channel subscribers
+        for guild_id, channel_id in global_data.get("notif_channels", {}).get(notif_key, []):
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                continue
+            channel = guild.get_channel(channel_id)
+            if channel is None:
+                continue
+            with suppress(discord.HTTPException, discord.Forbidden):
+                await channel.send(
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+
+    # ------------------------------------------------------------------
+    # Permission & hierarchy helpers
+    # ------------------------------------------------------------------
+
     async def is_allowed_by_hierarchy(
         self,
         guild: discord.Guild,
@@ -174,10 +248,66 @@ class VModBase(commands.Cog):
             return True
         return moderator.top_role > target.top_role
 
+    async def _rate_limit_exceeded_handler(
+        self, ctx: commands.Context, action_key: str
+    ) -> None:
+        """Called when a moderator exceeds their rate limit.
+
+        Mirrors the modplus ``rate_limit_exceeded()`` behaviour:
+        - Strips all moderation roles from the offending moderator.
+        - Notifies all ratelimit subscribers with an embed.
+        """
+        all_action_roles: dict[str, list[int]] = await self.config.guild(ctx.guild).action_roles()
+        all_mod_role_ids: set[int] = set()
+        for role_ids in all_action_roles.values():
+            all_mod_role_ids.update(role_ids)
+
+        removed: list[str] = []
+        broken: list[str] = []
+
+        for role in ctx.author.roles:
+            if role.id in all_mod_role_ids:
+                try:
+                    await ctx.author.remove_roles(role, reason=_("VMod rate limit exceeded."))
+                    removed.append(f"{role.mention} (`{role.id}`)")
+                except Exception:
+                    broken.append(f"{role.mention} (`{role.id}`)")
+
+        description_lines = [
+            f"**Moderator:** {ctx.author.mention} (`{ctx.author.id}`)",
+            f"**Action:** `{action_key}`",
+            f"**Server:** {ctx.guild.name} (`{ctx.guild.id}`)",
+        ]
+        if removed:
+            description_lines.append(f"**Roles removed:** {', '.join(removed)}")
+        if broken:
+            description_lines.append(
+                f"⚠️ **Could not remove:** {', '.join(broken)} — bot role may be too low."
+            )
+
+        embed = discord.Embed(
+            title="⚡ Moderator Rate Limit Exceeded",
+            description="\n".join(description_lines),
+            colour=discord.Colour.dark_orange(),
+        )
+        embed.timestamp = datetime.now(tz=timezone.utc)
+
+        await self.notify("ratelimit", embed)
+
+        # Also log to modlog channel
+        await self.send_modlog_note(
+            ctx.guild,
+            title=_("Moderator rate limit exceeded"),
+            description=_("{member} hit the `{action}` rate limit. Moderation roles removed.").format(
+                member=ctx.author.mention,
+                action=action_key,
+            ),
+        )
+
     async def _check_action_rate_limit(
         self, ctx: commands.Context, action_key: str
     ) -> tuple[bool, str | None]:
-        """Enforce a lightweight in-memory rate limit for non-admin moderators."""
+        """Enforce an in-memory rate limit for non-admin moderators."""
         limits = await self.config.guild(ctx.guild).action_rate_limits()
         settings = limits.get(action_key)
         if not settings:
@@ -198,7 +328,14 @@ class VModBase(commands.Cog):
         return True, None
 
     async def action_check(self, ctx: commands.Context, action_key: str) -> bool:
-        """Return ``True`` when the caller can use the requested moderated action."""
+        """Return ``True`` when the caller may perform the requested action.
+
+        Admin users and bot owners always bypass the check.
+        Regular moderators must have a configured role, and are subject
+        to the per-action rate limit.  Exceeding the rate limit triggers
+        the modulus-style handler that strips their mod roles and notifies
+        all ratelimit subscribers.
+        """
         if action_key not in ACTION_KEYS:
             return False
 
@@ -212,25 +349,21 @@ class VModBase(commands.Cog):
         has_role = any(role.id in allowed_role_ids for role in ctx.author.roles)
         if not has_role:
             await ctx.send(
-                _("You do not have the configured VMod permission for `{action}`.").format(
-                    action=action_key
-                )
+                _("You do not have the VMod permission for `{action}`.").format(action=action_key)
             )
             return False
 
         allowed, message = await self._check_action_rate_limit(ctx, action_key)
         if not allowed:
             await ctx.send(message)
-            await self.send_modlog_note(
-                ctx.guild,
-                title=_("Moderator rate limit hit"),
-                description=_("{member} hit the `{action}` rate limit.").format(
-                    member=ctx.author.mention,
-                    action=action_key,
-                ),
-            )
+            await self._rate_limit_exceeded_handler(ctx, action_key)
             return False
+
         return True
+
+    # ------------------------------------------------------------------
+    # DM helpers
+    # ------------------------------------------------------------------
 
     async def maybe_dm_before_action(
         self,
@@ -239,16 +372,29 @@ class VModBase(commands.Cog):
         action: str,
         guild: discord.Guild,
         reason: str | None,
+        embed: discord.Embed | None = None,
     ) -> None:
-        """Optionally DM a user before a kick or ban action is applied."""
+        """Optionally DM a user before a kick/ban/mute action is applied.
+
+        If an *embed* is provided it is sent instead of the plain-text fallback.
+        """
         if not await self.config.guild(guild).dm_on_kickban():
             return
 
-        msg = _("You are being {action} from **{guild}**.").format(action=action, guild=guild.name)
-        if reason:
-            msg += _("\nReason: {reason}").format(reason=reason)
         with suppress(discord.HTTPException, discord.Forbidden):
-            await member.send(msg)
+            if embed is not None:
+                await member.send(embed=embed)
+            else:
+                msg = _("You are being {action} from **{guild}**.").format(
+                    action=action, guild=guild.name
+                )
+                if reason:
+                    msg += _("\n**Reason:** {reason}").format(reason=reason)
+                await member.send(msg)
+
+    # ------------------------------------------------------------------
+    # Name / nick history
+    # ------------------------------------------------------------------
 
     async def append_name_history(self, user: discord.User, old_name: str) -> None:
         """Store a previous username while keeping the list de-duplicated and short."""
@@ -282,6 +428,66 @@ class VModBase(commands.Cog):
             nicks = [n for n in await self.config.member(member).past_nicks() if n]
         return names, nicks
 
+    # ------------------------------------------------------------------
+    # Warning helpers
+    # ------------------------------------------------------------------
+
+    async def add_warning(
+        self,
+        member: discord.Member,
+        *,
+        reason: str | None,
+        moderator: discord.Member,
+    ) -> int:
+        """Append a warning entry and return the new total warning count."""
+        entry = {
+            "reason": reason or _("No reason provided."),
+            "moderator_id": moderator.id,
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        async with self.config.member(member).warnings() as warnings:
+            warnings.append(entry)
+            count = len(warnings)
+
+        # Apply warning roles (modplus-style)
+        await self._apply_warning_role(member, count)
+        return count
+
+    async def _apply_warning_role(self, member: discord.Member, warn_count: int) -> None:
+        """Add the appropriate warning milestone role based on total warning count."""
+        guild = member.guild
+        warning_roles = await self.config.guild(guild).warning_roles()
+
+        if warn_count == 1:
+            role_id = warning_roles.get("warning1")
+        elif warn_count == 2:
+            role_id = warning_roles.get("warning2")
+        else:
+            role_id = warning_roles.get("warning3+")
+
+        if role_id is None:
+            return
+        role = guild.get_role(role_id)
+        if role is None:
+            return
+        with suppress(discord.HTTPException, discord.Forbidden):
+            await member.add_roles(role, reason=_("VMod warning milestone role."))
+
+    async def get_warnings(self, member: discord.Member) -> list[dict]:
+        """Return all stored warning entries for *member*."""
+        return [w for w in await self.config.member(member).warnings() if w]
+
+    async def clear_warnings(self, member: discord.Member) -> int:
+        """Clear all warnings for *member* and return how many were removed."""
+        warnings = await self.config.member(member).warnings()
+        count = len(warnings)
+        await self.config.member(member).warnings.set([])
+        return count
+
+    # ------------------------------------------------------------------
+    # Invite helper
+    # ------------------------------------------------------------------
+
     async def get_invite_for_reinvite(
         self, ctx: commands.Context, max_age: int = 86400
     ) -> discord.Invite | None:
@@ -299,9 +505,13 @@ class VModBase(commands.Cog):
                         max_age=max_age,
                         max_uses=1,
                         unique=True,
-                        reason=_("Invite created for VMod reinvite-on-unban."),
+                        reason=_("VMod reinvite-on-unban invite."),
                     )
         return None
+
+    # ------------------------------------------------------------------
+    # Modlog helpers
+    # ------------------------------------------------------------------
 
     async def create_modlog_case(
         self,
@@ -336,11 +546,7 @@ class VModBase(commands.Cog):
         title: str,
         description: str,
     ) -> None:
-        """Send a plain embed note to Red's configured modlog channel.
-
-        This is used for informational events that are useful to staff but do not
-        naturally map to a real moderation case.
-        """
+        """Send a plain embed note to Red's configured modlog channel."""
         try:
             channel = await modlog.get_modlog_channel(guild)
         except RuntimeError:
@@ -353,8 +559,12 @@ class VModBase(commands.Cog):
         with suppress(discord.HTTPException, discord.Forbidden):
             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
 
+    # ------------------------------------------------------------------
+    # Settings snapshot helper
+    # ------------------------------------------------------------------
+
     async def build_settings_snapshot(self, guild: discord.Guild) -> dict[str, Any]:
-        """Return a small normalized snapshot used by both commands and the UI panel."""
+        """Return a normalized snapshot used by both commands and the UI panel."""
         guild_data = await self.config.guild(guild).all()
         return {
             "delete_repeats": guild_data["delete_repeats"],
@@ -367,7 +577,13 @@ class VModBase(commands.Cog):
             "track_nicknames": guild_data["track_nicknames"],
             "action_roles": guild_data["action_roles"],
             "action_rate_limits": guild_data["action_rate_limits"],
+            "warning_roles": guild_data["warning_roles"],
+            "muted_role": guild_data["muted_role"],
         }
+
+    # ------------------------------------------------------------------
+    # Tempban expiry background task
+    # ------------------------------------------------------------------
 
     async def check_tempban_expirations(self) -> None:
         """Background task that removes tempbans after their configured expiry time."""
@@ -393,7 +609,7 @@ class VModBase(commands.Cog):
                             continue
                         try:
                             expiry = datetime.fromisoformat(banned_until)
-                        except ValueError:
+                        except (ValueError, TypeError):
                             await self.config.member_from_ids(guild_id, user_id).banned_until.clear()
                             continue
 
@@ -425,7 +641,7 @@ class VModBase(commands.Cog):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                # Keep the task alive even if one guild fails unexpectedly.
                 pass
 
             await asyncio.sleep(60)
+
