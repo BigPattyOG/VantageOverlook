@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
-import contextlib
 from typing import Any
 
 import discord
 
 from redbot.core import commands
+
+
+class SearchModal(discord.ui.Modal, title="Search Help"):
+    """Modal that lets users type a search query directly in the help menu."""
+
+    query = discord.ui.TextInput(
+        label="Search for a command or category",
+        placeholder="e.g. ban, moderation, timeout…",
+        min_length=1,
+        max_length=100,
+        required=True,
+    )
+
+    def __init__(self, navigator: "HelpNavigator") -> None:
+        super().__init__()
+        self.navigator = navigator
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        search_text = self.query.value.strip()
+        if not search_text:
+            await interaction.response.defer()
+            return
+        results = await self.navigator.cog.search_help(
+            self.navigator.ctx, search_text, limit=self.navigator.cog.search_limit
+        )
+        self.navigator.mode = "search"
+        self.navigator.page = 0
+        self.navigator.search_query = search_text
+        self.navigator.search_results = results
+        self.navigator._sync_buttons()
+        await interaction.response.edit_message(embed=await self.navigator.render(), view=self.navigator)
 
 
 class VHelpBaseView(discord.ui.View):
@@ -68,10 +98,7 @@ class HelpNavigator(VHelpBaseView):
         self.search_results = search_results or []
         self.scope_name = scope_name
         self.scope_commands = scope_commands or []
-        if self.mode != "search":
-            self.remove_item(self.closest_match_button)
         self._sync_buttons()
-        self._sync_visibility()
 
     def _home_pages(self) -> list[tuple[str, int | None, int]]:
         pages: list[tuple[str, int | None, int]] = [("home", None, 0)]
@@ -100,14 +127,6 @@ class HelpNavigator(VHelpBaseView):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= total_pages - 1
         self.page_indicator.label = f"{self.page + 1}/{total_pages}"
-        self.home_button.disabled = (self.mode == "home" and self.page == 0)
-
-    def _sync_visibility(self) -> None:
-        if self.mode != "search":
-            return
-        active = bool(self.search_results)
-        self.closest_match_button.disabled = not active
-        self.closest_match_button.style = discord.ButtonStyle.success if active else discord.ButtonStyle.secondary
 
     async def render(self) -> discord.Embed:
         renderer = self.cog.renderer
@@ -169,56 +188,30 @@ class HelpNavigator(VHelpBaseView):
             )
         raise RuntimeError("Unsupported help menu state.")
 
-    @discord.ui.button(label="Closest Match", style=discord.ButtonStyle.success, row=0)
-    async def closest_match_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if self.mode != "search" or not self.search_results:
-            await interaction.response.defer()
-            return
-        best = self.search_results[0].object_ref
-        if isinstance(best, commands.Group):
-            await self.cog.formatter._send_group(self.ctx, best, redirect_from=self.search_query)
-        elif isinstance(best, commands.Command):
-            await self.cog.formatter._send_command(self.ctx, best, redirect_from=self.search_query)
-        elif isinstance(best, commands.Cog):
-            category = await self.cog.find_category(self.ctx, best.qualified_name)
-            if category is not None:
-                await self.cog.formatter._send_category(self.ctx, category[0], category[1])
-        if self.message is not None:
-            with contextlib.suppress(discord.HTTPException):
-                await self.message.delete()
-        self.stop()
-        if not interaction.response.is_done():
-            await interaction.response.defer()
+    # ── Single button row: ⏮️  1/1  ⏭️  🔍 Search  ✖️ ──────────────────────
 
-    @discord.ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary, row=1)
-    async def home_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        """Return to the main help overview page."""
-        self.mode = "home"
-        self.page = 0
-        self.category_index = None
-        self._sync_buttons()
-        self._sync_visibility()
-        await interaction.response.edit_message(embed=await self.render(), view=self)
-
-    @discord.ui.button(label="<", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.blurple)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         self.page = max(0, self.page - 1)
         self._sync_buttons()
-        self._sync_visibility()
         await interaction.response.edit_message(embed=await self.render(), view=self)
 
-    @discord.ui.button(label="1/1", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    @discord.ui.button(label="1/1", style=discord.ButtonStyle.secondary, disabled=True)
     async def page_indicator(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.defer()
 
-    @discord.ui.button(label=">", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.blurple)
     async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         self.page = min(self._page_count() - 1, self.page + 1)
         self._sync_buttons()
-        self._sync_visibility()
         await interaction.response.edit_message(embed=await self.render(), view=self)
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, row=0)
+    @discord.ui.button(label="🔍 Search", style=discord.ButtonStyle.primary)
+    async def search_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Open the search modal to find commands and categories."""
+        await interaction.response.send_modal(SearchModal(self))
+
+    @discord.ui.button(emoji="✖️", style=discord.ButtonStyle.danger)
     async def close_menu(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         self.stop()
         deleted = False
