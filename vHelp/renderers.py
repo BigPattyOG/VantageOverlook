@@ -56,7 +56,7 @@ class HelpRenderer:
         return embed
 
     def default_footer(self, ctx: commands.Context, *, extra: str = "") -> str:
-        base = f"Tip: {ctx.clean_prefix}help <command> for details  •  {ctx.clean_prefix}help search <query> to search"
+        base = f"Tip: {ctx.clean_prefix}help <command> for details  •  Use the 🔍 Search button to find anything"
         return f"{base}  •  {extra}" if extra else base
 
     def category_label(self, name: str | None) -> str:
@@ -119,11 +119,9 @@ class HelpRenderer:
             ctx,
             title="📖  Help — Overview",
             description=(
-                f"Hey **{ctx.author.display_name}**, welcome to the interactive help menu!\n"
-                f"`{prefix}help <command>` · `{prefix}help <category>` · `{prefix}help search <query>`\n"
-                f"{_DIVIDER}\n"
-                f"Use **⏮️ ⏭️** to flip pages, **🏠 Home** to return to the overview,\n"
-                f"or type `{prefix}help search <keyword>` to find any command by name."
+                f"Welcome, **{ctx.author.display_name}**! Browse all available commands below.\n"
+                f"Use **⏮️ ⏭️** to flip pages · **🔍 Search** to find anything instantly\n"
+                f"`{prefix}help <command>` for full command details"
             ),
             color=_COLOR_DEFAULT,
         )
@@ -135,15 +133,19 @@ class HelpRenderer:
         embed.add_field(name="🏠 Server Stats", value=self._server_stats(ctx), inline=True)
 
         if categories:
+            _category_emojis = ["📁", "📋", "🔧", "🎮", "🛡️", "🎵", "🌐", "⚙️", "🎲", "🏆", "💬", "🔑", "📌", "🗂️", "📦"]
             lines: list[str] = []
-            for entry in categories:
+            for i, entry in enumerate(categories):
                 label = self.category_label(entry["name"])
                 cmd_count = len(entry["commands"])
-                desc_first = (entry.get("description") or "").strip().splitlines()[0][:60]
-                lines.append(f"**{label}** `{cmd_count} cmd{'s' if cmd_count != 1 else ''}`\n{_BULLET} {desc_first or 'No description.'}")
+                desc_first = (entry.get("description") or "No description.").strip().splitlines()[0][:55]
+                emoji = _category_emojis[i % len(_category_emojis)]
+                lines.append(
+                    f"{emoji} **{label}** `{cmd_count} cmd{'s' if cmd_count != 1 else ''}` — {desc_first}"
+                )
             embed.add_field(
-                name=f"{_DIVIDER}\n📂  Categories  ({len(categories)} total)",
-                value="\n\n".join(lines) or "No categories available.",
+                name=f"📂  Available Categories  ({len(categories)})",
+                value="\n".join(lines) or "No categories available.",
                 inline=False,
             )
         else:
@@ -158,8 +160,8 @@ class HelpRenderer:
         if is_owner:
             quick_paths.append(f"`{prefix}help owner` — bot-owner commands")
 
-        embed.add_field(name="🔍 Quick Access", value="\n".join(quick_paths), inline=False)
-        embed.set_footer(text=f"Page 1/{total_pages}  •  Use ⏮️ ⏭️ to browse  •  {prefix}help search <query> to find commands.")
+        embed.add_field(name="💡 Quick Access", value="\n".join(quick_paths), inline=False)
+        embed.set_footer(text=f"Page 1/{total_pages}  •  🔍 Search · ⏮️ ⏭️ to navigate")
         return embed
 
     async def cog_embed(
@@ -181,21 +183,18 @@ class HelpRenderer:
         embed = await self._base_embed(
             ctx,
             title=f"📂  {cog_name}",
-            description=(
-                (description or "No description provided.").strip().splitlines()[0]
-                + f"\n{_DIVIDER}"
-            ),
+            description=(description or "No description provided.").strip().splitlines()[0],
             color=_COLOR_CATEGORY,
         )
 
         if current:
             lines = [
-                f"**`{cmd.qualified_name}`**\n{_BULLET} {short_doc(cmd)}"
+                f"`{cmd.qualified_name}` — {short_doc(cmd)}"
                 for cmd in current
             ]
             embed.add_field(
-                name=f"⌨️  Commands  (page {page + 1}/{total_pages})",
-                value="\n\n".join(lines),
+                name=f"⌨️  Commands  ({page + 1}/{total_pages})",
+                value="\n".join(lines),
                 inline=False,
             )
         else:
@@ -203,7 +202,7 @@ class HelpRenderer:
 
         embed.add_field(
             name="💡 Tip",
-            value=f"`{ctx.clean_prefix}help <command>` — shows full usage, aliases and details.",
+            value=f"`{ctx.clean_prefix}help <command>` — full usage, aliases and details.",
             inline=False,
         )
 
@@ -237,18 +236,18 @@ class HelpRenderer:
         embed = await self._base_embed(
             ctx,
             title=title,
-            description=description + f"\n{_DIVIDER}",
+            description=description,
             color=color,
         )
 
         if current:
             lines = [
-                f"**`{cmd.qualified_name}`**\n{_BULLET} {short_doc(cmd)}"
+                f"`{cmd.qualified_name}` — {short_doc(cmd)}"
                 for cmd in current
             ]
             embed.add_field(
-                name=f"⌨️  Commands  (page {page + 1}/{total_pages})",
-                value="\n\n".join(lines),
+                name=f"⌨️  Commands  ({page + 1}/{total_pages})",
+                value="\n".join(lines),
                 inline=False,
             )
         else:
@@ -271,10 +270,13 @@ class HelpRenderer:
         scope = command_scope(command)
         if scope == "owner":
             color = _COLOR_OWNER
+            access_badge = "👑 Bot owner only"
         elif scope == "admin" or admin_context:
             color = _COLOR_ADMIN
+            access_badge = "🛡️ Requires elevated permissions"
         else:
             color = _COLOR_COMMAND
+            access_badge = "🌐 Public"
 
         full_description = (command.help or short_doc(command)).strip()
 
@@ -291,23 +293,17 @@ class HelpRenderer:
             inline=False,
         )
 
-        details: list[str] = []
         aliases = command_aliases(command)
-        if aliases != "No aliases.":
-            details.append(f"**Aliases:** {aliases}")
+        meta_parts: list[str] = []
         if command.cog_name:
-            details.append(f"**Category:** `{command.cog_name}`")
+            meta_parts.append(f"**Category:** `{command.cog_name}`")
         if command.parent is not None:
-            details.append(f"**Parent:** `{command.parent.qualified_name}`")
-        if scope == "admin" or admin_context:
-            details.append("**Access:** 🛡️ Requires elevated permissions")
-        elif scope == "owner":
-            details.append("**Access:** 👑 Bot owner only")
-        else:
-            details.append("**Access:** 🌐 Public")
+            meta_parts.append(f"**Parent:** `{command.parent.qualified_name}`")
+        if aliases != "No aliases.":
+            meta_parts.append(f"**Aliases:** {aliases}")
+        meta_parts.append(f"**Access:** {access_badge}")
 
-        if details:
-            embed.add_field(name="ℹ️ Details", value="\n".join(details), inline=False)
+        embed.add_field(name="ℹ️ Details", value="\n".join(meta_parts), inline=False)
 
         if redirect_from and redirect_from.casefold() != command.qualified_name.casefold():
             embed.add_field(
@@ -350,11 +346,13 @@ class HelpRenderer:
         )
 
         aliases = command_aliases(command)
-        if aliases != "No aliases.":
-            embed.add_field(name="ℹ️ Aliases", value=aliases, inline=False)
-
+        meta_parts: list[str] = []
         if command.cog_name:
-            embed.add_field(name="📂 Category", value=f"`{command.cog_name}`", inline=False)
+            meta_parts.append(f"**Category:** `{command.cog_name}`")
+        if aliases != "No aliases.":
+            meta_parts.append(f"**Aliases:** {aliases}")
+        if meta_parts:
+            embed.add_field(name="ℹ️ Details", value="\n".join(meta_parts), inline=False)
 
         if redirect_from and redirect_from.casefold() != command.qualified_name.casefold():
             embed.add_field(
@@ -365,12 +363,12 @@ class HelpRenderer:
 
         if current:
             lines = [
-                f"**`{sub.qualified_name}`**\n{_BULLET} {short_doc(sub)}"
+                f"`{sub.qualified_name}` — {short_doc(sub)}"
                 for sub in current
             ]
             embed.add_field(
-                name=f"📂  Subcommands  (page {page + 1}/{total_pages})",
-                value="\n\n".join(lines),
+                name=f"📂  Subcommands  ({page + 1}/{total_pages})",
+                value="\n".join(lines),
                 inline=False,
             )
         else:
@@ -398,7 +396,6 @@ class HelpRenderer:
             title=f"🔎  Search — {query!r}",
             description=(
                 f"Found **{len(results)}** result{'s' if len(results) != 1 else ''}.\n"
-                f"Use **⭐ Best Match** below to jump straight to the top result.\n"
                 f"{_DIVIDER}"
             ),
             color=_COLOR_SEARCH,
@@ -432,7 +429,7 @@ class HelpRenderer:
 
         embed.add_field(
             name="💡 Tip",
-            value=f"`{ctx.clean_prefix}help search <query>` — run another search at any time.",
+            value="Click **🔍 Search** to run another search at any time.",
             inline=False,
         )
         embed.set_footer(text=f"Page {page + 1}/{total_pages}  •  Results for: {query}")
@@ -474,7 +471,7 @@ class HelpRenderer:
 
         embed.add_field(
             name="🔎 Try a Search",
-            value=f"`{ctx.clean_prefix}help search {query}` — fuzzy search across all commands and categories.",
+            value="Click the **🔍 Search** button in the interactive help menu to find anything by keyword.",
             inline=False,
         )
         embed.set_footer(text=self.default_footer(ctx))

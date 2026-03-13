@@ -9,6 +9,37 @@ import discord
 from redbot.core import commands
 
 
+class SearchModal(discord.ui.Modal, title="Search Help"):
+    """Modal that lets users type a search query directly in the help menu."""
+
+    query = discord.ui.TextInput(
+        label="Search for a command or category",
+        placeholder="e.g. ban, moderation, timeout…",
+        min_length=1,
+        max_length=100,
+        required=True,
+    )
+
+    def __init__(self, navigator: "HelpNavigator") -> None:
+        super().__init__()
+        self.navigator = navigator
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        search_text = self.query.value.strip()
+        if not search_text:
+            await interaction.response.defer()
+            return
+        results = await self.navigator.cog.search_help(
+            self.navigator.ctx, search_text, limit=self.navigator.cog.search_limit
+        )
+        self.navigator.mode = "search"
+        self.navigator.page = 0
+        self.navigator.search_query = search_text
+        self.navigator.search_results = results
+        self.navigator._sync_buttons()
+        await interaction.response.edit_message(embed=await self.navigator.render(), view=self.navigator)
+
+
 class VHelpBaseView(discord.ui.View):
     def __init__(self, cog: commands.Cog, ctx: commands.Context, *, timeout: float = 180):
         super().__init__(timeout=timeout)
@@ -96,7 +127,6 @@ class HelpNavigator(VHelpBaseView):
         self.previous_page.disabled = self.page <= 0
         self.next_page.disabled = self.page >= total_pages - 1
         self.page_indicator.label = f"{self.page + 1}/{total_pages}"
-        self.home_button.disabled = (self.mode == "home" and self.page == 0)
 
     async def render(self) -> discord.Embed:
         renderer = self.cog.renderer
@@ -158,7 +188,7 @@ class HelpNavigator(VHelpBaseView):
             )
         raise RuntimeError("Unsupported help menu state.")
 
-    # ── Single button row: ⏮️  1/1  ⏭️  🏠 Home  ✖️ ────────────────────────
+    # ── Single button row: ⏮️  1/1  ⏭️  🔍 Search  ✖️ ──────────────────────
 
     @discord.ui.button(emoji="⏮️", style=discord.ButtonStyle.blurple)
     async def previous_page(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
@@ -176,14 +206,10 @@ class HelpNavigator(VHelpBaseView):
         self._sync_buttons()
         await interaction.response.edit_message(embed=await self.render(), view=self)
 
-    @discord.ui.button(label="🏠 Home", style=discord.ButtonStyle.secondary)
-    async def home_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        """Return to the main help overview page."""
-        self.mode = "home"
-        self.page = 0
-        self.category_index = None
-        self._sync_buttons()
-        await interaction.response.edit_message(embed=await self.render(), view=self)
+    @discord.ui.button(label="🔍 Search", style=discord.ButtonStyle.primary)
+    async def search_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Open the search modal to find commands and categories."""
+        await interaction.response.send_modal(SearchModal(self))
 
     @discord.ui.button(emoji="✖️", style=discord.ButtonStyle.danger)
     async def close_menu(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
