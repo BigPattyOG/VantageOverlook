@@ -57,7 +57,7 @@ def resolve_family_for_command(command: Optional[commands.Command]) -> tuple[str
     explicit = getattr(cog, "__vantage_error_family__", None)
     explicit_name = getattr(cog, "__vantage_error_family_name__", None)
     if explicit:
-        return str(explicit).upper()[:2], str(explicit_name or explicit_name or cog.qualified_name)
+        return str(explicit).upper()[:2], str(explicit_name or cog.qualified_name)
 
     cog_name = cog.qualified_name.lower()
     if cog_name.startswith("vhelp"):

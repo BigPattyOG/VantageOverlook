@@ -28,7 +28,7 @@ from .utils import (
 from .views import HelpNavigator
 
 try:
-    from verrors.decorators import error_family, error_meta, error_slot
+    from vError.decorators import error_family, error_meta, error_slot
 except Exception:
     def error_family(*args, **kwargs):
         def deco(cls):
@@ -46,7 +46,7 @@ except Exception:
         return deco
 
 try:
-    from verrors.utils import (
+    from vError.utils import (
         fixable_error_reply as verrors_fixable_error_reply,
         internal_lookup_embed as verrors_internal_lookup_embed,
         public_code_for_error as verrors_public_code_for_error,

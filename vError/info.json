@@ -1,0 +1,13 @@
+{
+    "name": "vError",
+    "short": "Centralised error handling, public error codes, and internal error reporting for VantageOverlook cogs.",
+    "description": "vError is the error backbone for all VantageOverlook cogs. It intercepts command errors, classifies them into user-facing public error codes (e.g. VTGGNODA1) or internal incident reports (e.g. VTGINT0001), notifies bot owners of unexpected failures via Discord DM, and provides a rich set of owner-only commands to browse, search, and manage stored error records. Other cogs use vError's decorators and utilities to register their error families and generate consistent, trackable error codes across the entire bot.",
+    "tags": ["errors", "logging", "moderation", "utility", "developer"],
+    "requirements_to_load": [],
+    "hidden": false,
+    "install_msg": "vError installed! Load this cog before other VantageOverlook cogs so error handling is active. No setup is required — errors will be recorded automatically and bot owners will be notified by DM.",
+    "author": ["VantageOverlook"],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 10, 0],
+    "end_user_data_statement": "This cog stores internal error records that may include guild ID, channel ID, and user ID associated with a command invocation at the time of an unexpected error. This data is stored globally, is only accessible to bot owners, and is used solely for debugging. It can be cleared at any time with `[p]errors clear`."
+}

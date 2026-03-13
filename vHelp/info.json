@@ -1,0 +1,13 @@
+{
+    "name": "vHelp",
+    "short": "Custom help formatter with scoped admin/owner help and VErrors integration.",
+    "description": "vHelp replaces Red's default help system with a paginated, searchable help formatter. It supports scoped help pages (admin, owner), fuzzy search with suggestions, and integrates with vError for consistent error code display and internal error reporting.",
+    "tags": ["help", "utility", "formatter"],
+    "requirements_to_load": [],
+    "hidden": false,
+    "install_msg": "vHelp installed! The custom help formatter will activate automatically. Use `[p]help` as normal, and enjoy the upgraded paginated experience.",
+    "author": ["VantageOverlook"],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 10, 0],
+    "end_user_data_statement": "This cog does not store any end-user data. Help queries are processed in memory and not persisted."
+}

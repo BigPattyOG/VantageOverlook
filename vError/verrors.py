@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import Counter
 from typing import Optional
 
@@ -90,6 +91,9 @@ class VErrors(commands.Cog):
         self.reporter = ErrorReporter(bot, self.config)
         self._public_registry_cache: Optional[dict] = None
 
+    async def cog_load(self) -> None:
+        self.rebuild_registry()
+
     def format_help_for_context(self, ctx: commands.Context) -> str:
         pre = super().format_help_for_context(ctx)
         return f"{pre}\n\nVersion: {self.__version__}"
@@ -128,10 +132,15 @@ class VErrors(commands.Cog):
         if isinstance(error, commands.UserFeedbackCheckFailure):
             return
 
-        public_code = public_code_for_error(ctx, error)
+        # Unwrap ConversionError so the inner converter error is classified correctly.
+        unwrapped: Exception = error
+        if isinstance(error, commands.ConversionError) and error.__cause__ is not None:
+            unwrapped = error.__cause__
+
+        public_code = public_code_for_error(ctx, unwrapped)
         if public_code is not None:
             try:
-                await ctx.send(embed=fixable_error_reply(ctx, error, public_code))
+                await ctx.send(embed=fixable_error_reply(ctx, unwrapped, public_code))
             except discord.HTTPException:
                 pass
             return
@@ -293,6 +302,10 @@ class VErrors(commands.Cog):
             f"User: `{match.get('user_id') or 'N/A'}`"
         )
         embed.add_field(name="📌 Context", value=meta, inline=False)
+        created_at = match.get("created_at")
+        if created_at:
+            ts = int(created_at)
+            embed.add_field(name="🕐 Occurred", value=f"<t:{ts}:F> (<t:{ts}:R>)", inline=False)
         await ctx.send(embed=embed)
 
     @errors_group.command(name="traceback")
