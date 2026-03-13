@@ -56,7 +56,7 @@ class HelpRenderer:
         return embed
 
     def default_footer(self, ctx: commands.Context, *, extra: str = "") -> str:
-        base = f"Tip: {ctx.clean_prefix}help <command> for details  •  Use the 🔍 Search button to find anything"
+        base = f"Tip: {ctx.clean_prefix}help <command> for details  •  {ctx.clean_prefix}help search <query> to search"
         return f"{base}  •  {extra}" if extra else base
 
     def category_label(self, name: str | None) -> str:
@@ -120,10 +120,10 @@ class HelpRenderer:
             title="📖  Help — Overview",
             description=(
                 f"Hey **{ctx.author.display_name}**, welcome to the interactive help menu!\n"
-                f"`{prefix}help <command>` · `{prefix}help <category>` · **🔍 Search** button\n"
+                f"`{prefix}help <command>` · `{prefix}help <category>` · `{prefix}help search <query>`\n"
                 f"{_DIVIDER}\n"
-                f"Use **⏮️ ⏭️** to flip pages, the **📂 dropdown** to jump to a category,\n"
-                f"or the **🔍 Search** button to find anything by keyword."
+                f"Use **⏮️ ⏭️** to flip pages, **🏠 Home** to return to the overview,\n"
+                f"or type `{prefix}help search <keyword>` to find any command by name."
             ),
             color=_COLOR_DEFAULT,
         )
@@ -159,7 +159,7 @@ class HelpRenderer:
             quick_paths.append(f"`{prefix}help owner` — bot-owner commands")
 
         embed.add_field(name="🔍 Quick Access", value="\n".join(quick_paths), inline=False)
-        embed.set_footer(text=f"Page 1/{total_pages}  •  Use the dropdown or search to navigate quickly.")
+        embed.set_footer(text=f"Page 1/{total_pages}  •  Use ⏮️ ⏭️ to browse  •  {prefix}help search <query> to find commands.")
         return embed
 
     async def cog_embed(
@@ -432,10 +432,7 @@ class HelpRenderer:
 
         embed.add_field(
             name="💡 Tip",
-            value=(
-                f"`{ctx.clean_prefix}help search <query>` — search from the command line\n"
-                f"Use the **🔍 Search** button to run another search."
-            ),
+            value=f"`{ctx.clean_prefix}help search <query>` — run another search at any time.",
             inline=False,
         )
         embed.set_footer(text=f"Page {page + 1}/{total_pages}  •  Results for: {query}")
@@ -477,10 +474,7 @@ class HelpRenderer:
 
         embed.add_field(
             name="🔎 Try a Search",
-            value=(
-                f"`{ctx.clean_prefix}help search {query}` — fuzzy search across all commands and categories\n"
-                f"Or use the **🔍 Search** button in the interactive help menu (`{ctx.clean_prefix}help`)."
-            ),
+            value=f"`{ctx.clean_prefix}help search {query}` — fuzzy search across all commands and categories.",
             inline=False,
         )
         embed.set_footer(text=self.default_footer(ctx))
