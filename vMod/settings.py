@@ -1,7 +1,7 @@
 """Configuration commands for VMod.
 
 Includes:
-  - vmodset    — guild-level settings (hierarchy, DM, reinvite, repeats, tempban, etc.)
+  - vmodset    — guild-level settings; shows help embed when invoked alone
   - vmodperms  — role-based action permission management
   - vmodroles  — warning and muted role configuration
   - vmodnotifs — notification subscription management (modulus-style)
@@ -17,7 +17,24 @@ from redbot.core.utils.chat_formatting import humanize_list, humanize_timedelta
 
 from .base import VModBase
 from .constants import ACTION_KEYS, NOTIF_KEYS, NOTIF_SYS_INFO, PERM_SYS_INFO, _
-from .views import VModDashboardView
+from .views import VModDashboardView, VModSetupWizard
+
+
+# ---------------------------------------------------------------------------
+# Helper: group-level help embeds
+# ---------------------------------------------------------------------------
+
+def _group_help_embed(
+    title: str,
+    description: str,
+    commands_list: list[tuple[str, str]],
+    *,
+    colour: discord.Color = discord.Color.blurple(),
+) -> discord.Embed:
+    embed = discord.Embed(title=title, description=description, colour=colour)
+    for cmd, desc in commands_list:
+        embed.add_field(name=f"`{cmd}`", value=desc, inline=False)
+    return embed
 
 
 class VModSettings(VModBase):
@@ -27,22 +44,170 @@ class VModSettings(VModBase):
     # vmodset — main settings group
     # ==================================================================
 
-    @commands.group(name="vmodset")
+    @commands.group(name="vmodset", invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodset(self, ctx: commands.Context) -> None:
-        """Configure VMod settings for this server."""
+        """Configure VMod settings — run without a subcommand to see all options."""
+        embed = _group_help_embed(
+            "⚙️ VMod Configuration",
+            (
+                "Run `[p]vmodset wizard` for a guided step-by-step setup, "
+                "or `[p]vmodset panel` for the interactive control panel.\n\n"
+                "**Available subcommands:**"
+            ),
+            [
+                ("[p]vmodset wizard",       "🧙 Guided first-time setup wizard"),
+                ("[p]vmodset panel",        "🖥️ Interactive control panel with buttons"),
+                ("[p]vmodset checklist",    "📋 Show what's configured and what's missing"),
+                ("[p]vmodset show",         "📊 Show all current settings"),
+                ("[p]vmodset hierarchy",    "⚔️ Toggle role hierarchy checks"),
+                ("[p]vmodset dmonaction",   "📨 Toggle DM-before-action"),
+                ("[p]vmodset reinvite",     "🔗 Toggle reinvite on unban"),
+                ("[p]vmodset repeats",      "🔁 Set repeat-message threshold"),
+                ("[p]vmodset defaultdays",  "🗑️ Set default ban delete days"),
+                ("[p]vmodset defaulttempban","⏳ Set default tempban duration"),
+                ("[p]vmodset tracknicks",   "🏷️ Toggle nickname tracking"),
+                ("[p]vmodset mentionspam",  "⚠️ Configure mention-spam thresholds"),
+            ],
+        )
+        embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
+        await ctx.send(embed=embed)
 
-    @vmodset.command(name="show", aliases=["status", "config"])
+    # ------------------------------------------------------------------ #
+    # Wizard                                                               #
+    # ------------------------------------------------------------------ #
+
+    @vmodset.command(name="wizard", aliases=["setup"])
+    @commands.bot_has_permissions(embed_links=True)
+    async def vmodset_wizard(self, ctx: commands.Context) -> None:
+        """Launch the guided VMod setup wizard.
+
+        Walks through the most important settings step by step using interactive
+        buttons, role selectors, and channel selectors — no commands to memorise.
+        """
+        wizard = VModSetupWizard(self, ctx.author, ctx.guild)
+        message = await ctx.send(embed=await wizard._build_embed(), view=wizard)
+        wizard.message = message
+
+    # ------------------------------------------------------------------ #
+    # Checklist                                                            #
+    # ------------------------------------------------------------------ #
+
+    @vmodset.command(name="checklist", aliases=["status"])
+    @commands.bot_has_permissions(embed_links=True)
+    async def vmodset_checklist(self, ctx: commands.Context) -> None:
+        """Show a checklist of what's configured and what still needs attention."""
+        snapshot = await self.build_settings_snapshot(ctx.guild)
+        guild    = ctx.guild
+        action_roles = snapshot["action_roles"]
+        wr           = snapshot["warning_roles"]
+        global_data  = await self.config.all()
+        notif_chs    = global_data.get("notif_channels", {})
+
+        def tick(cond: bool) -> str:
+            return "✅" if cond else "⚠️"
+
+        # Check: at least one role has kick permission
+        has_kick = any(guild.get_role(rid) for rid in action_roles.get("kick", []))
+        has_ban  = any(guild.get_role(rid) for rid in action_roles.get("ban",  []))
+        has_mute = any(guild.get_role(rid) for rid in action_roles.get("mute", []))
+        has_warn = any(guild.get_role(rid) for rid in action_roles.get("warn", []))
+
+        # Check: at least one warning role set
+        any_warn_role = any(wr.get(k) and guild.get_role(wr[k]) for k in ("warning1", "warning2", "warning3+"))
+
+        # Check: at least one notification channel set for important events
+        any_notif_ch = any(
+            entry
+            for key in ("kick", "ban", "ratelimit", "adminrole", "bot")
+            for entry in notif_chs.get(key, [])
+            if guild.get_channel(entry[1])
+        )
+
+        # Modlog channel (Red built-in)
+        from redbot.core import modlog
+        try:
+            modlog_ch = await modlog.get_modlog_channel(guild)
+        except RuntimeError:
+            modlog_ch = None
+
+        lines_perms = (
+            f"{tick(has_kick)} Kick permission role\n"
+            f"{tick(has_ban)}  Ban permission role\n"
+            f"{tick(has_mute)} Mute permission role\n"
+            f"{tick(has_warn)} Warn permission role"
+        )
+        lines_roles = (
+            f"{tick(any_warn_role)} At least one warning milestone role\n"
+            f"{tick(bool(snapshot['muted_role'] and guild.get_role(snapshot['muted_role'])))} Muted role configured"
+        )
+        lines_notifs = (
+            f"{tick(any_notif_ch)}  Notification channel set\n"
+            f"{tick(bool(modlog_ch))} Red modlog channel set"
+        )
+        lines_settings = (
+            f"{'✅' if snapshot['respect_hierarchy'] else '💡'} Hierarchy checks: "
+            f"**{'On' if snapshot['respect_hierarchy'] else 'Off'}**\n"
+            f"{'✅' if snapshot['dm_on_kickban']     else '💡'} DM before action: "
+            f"**{'On' if snapshot['dm_on_kickban'] else 'Off'}**\n"
+            f"{'✅' if snapshot['reinvite_on_unban'] else '💡'} Reinvite on unban: "
+            f"**{'On' if snapshot['reinvite_on_unban'] else 'Off'}**"
+        )
+
+        # Summary line
+        issues = []
+        if not has_kick:
+            issues.append("no kick role")
+        if not has_ban:
+            issues.append("no ban role")
+        if not any_notif_ch:
+            issues.append("no notification channel")
+        if not modlog_ch:
+            issues.append("no modlog channel")
+
+        if issues:
+            summary = f"⚠️ **Needs attention:** {', '.join(issues)}."
+            colour  = discord.Color.orange()
+        else:
+            summary = "✅ **Everything looks good!** VMod is fully configured."
+            colour  = discord.Color.green()
+
+        embed = discord.Embed(
+            title=f"📋 VMod Setup Checklist — {guild.name}",
+            description=summary,
+            colour=colour,
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        embed.set_author(name=ctx.me.display_name, icon_url=ctx.me.display_avatar.url)
+
+        embed.add_field(name="🔑 Permissions",    value=lines_perms,    inline=True)
+        embed.add_field(name="🏅 Roles",          value=lines_roles,    inline=True)
+        embed.add_field(name="🔔 Notifications",  value=lines_notifs,   inline=False)
+        embed.add_field(name="⚙️ Settings",       value=lines_settings, inline=False)
+
+        if issues:
+            embed.set_footer(text="Run [p]vmodset wizard to fix missing items interactively.")
+        else:
+            embed.set_footer(text="Run [p]vmodset panel to tweak any setting.")
+
+        await ctx.send(embed=embed)
+
+    # ------------------------------------------------------------------ #
+    # Show                                                                 #
+    # ------------------------------------------------------------------ #
+
+    @vmodset.command(name="show", aliases=["config"])
     @commands.bot_has_permissions(embed_links=True)
     async def vmodset_show(self, ctx: commands.Context) -> None:
-        """Show the current VMod configuration for this server."""
+        """Show the full VMod configuration for this server."""
         snapshot = await self.build_settings_snapshot(ctx.guild)
         ms = snapshot["mention_spam"]
 
         on = "✅ Enabled"
         off = "❌ Disabled"
-
         repeat_text = (
             _("After **{n}** identical messages").format(n=snapshot["delete_repeats"])
             if snapshot["delete_repeats"] != -1
@@ -86,8 +251,6 @@ class VModSettings(VModBase):
             ),
             inline=False,
         )
-
-        # Warning roles
         wr = snapshot["warning_roles"]
         guild = ctx.guild
         wr_lines = []
@@ -95,19 +258,26 @@ class VModSettings(VModBase):
             role = guild.get_role(wr.get(key)) if wr.get(key) else None
             wr_lines.append(f"**{key}:** {role.mention if role else 'Not set'}")
         embed.add_field(name="🏅 Warning Roles", value="\n".join(wr_lines), inline=True)
-
         muted_role = guild.get_role(snapshot["muted_role"]) if snapshot["muted_role"] else None
         embed.add_field(name="🔇 Muted Role", value=muted_role.mention if muted_role else "Not set", inline=True)
 
         await ctx.send(embed=embed)
 
+    # ------------------------------------------------------------------ #
+    # Panel                                                                #
+    # ------------------------------------------------------------------ #
+
     @vmodset.command(name="panel", aliases=["dashboard", "ui"])
     @commands.bot_has_permissions(embed_links=True)
     async def vmodset_panel(self, ctx: commands.Context) -> None:
-        """Open the interactive VMod setup panel."""
+        """Open the interactive VMod control panel with section dropdowns and buttons."""
         view = VModDashboardView(self, ctx.author, ctx.guild)
         message = await ctx.send(embed=await view.build_embed(), view=view)
         view.message = message
+
+    # ------------------------------------------------------------------ #
+    # Individual settings                                                  #
+    # ------------------------------------------------------------------ #
 
     @vmodset.command(name="hierarchy")
     async def vmodset_hierarchy(self, ctx: commands.Context, enabled: bool | None = None) -> None:
@@ -196,9 +366,22 @@ class VModSettings(VModBase):
     # vmodset mentionspam subgroup
     # ==================================================================
 
-    @vmodset.group(name="mentionspam")
+    @vmodset.group(name="mentionspam", invoke_without_command=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def mentionspam(self, ctx: commands.Context) -> None:
         """Configure auto-moderation thresholds for mention spam."""
+        ms = await self.config.guild(ctx.guild).mention_spam.all()
+        embed = discord.Embed(title="⚠️ Mention Spam Thresholds", colour=discord.Color.orange())
+        embed.add_field(name="⚠️ Warn", value=str(ms["warn"] or "Disabled"), inline=True)
+        embed.add_field(name="👢 Kick", value=str(ms["kick"] or "Disabled"), inline=True)
+        embed.add_field(name="🔨 Ban",  value=str(ms["ban"]  or "Disabled"), inline=True)
+        embed.add_field(
+            name="📐 Strict mode",
+            value="✅ On — duplicate mentions count" if ms["strict"] else "❌ Off — unique mentions only",
+            inline=False,
+        )
+        embed.set_footer(text="Subcommands: warn, kick, ban, strict, show")
+        await ctx.send(embed=embed)
 
     @mentionspam.command(name="show")
     @commands.bot_has_permissions(embed_links=True)
@@ -267,14 +450,38 @@ class VModSettings(VModBase):
         )
 
     # ==================================================================
-    # vmodperms — role-based action permissions (modulus-style)
+    # vmodperms — role-based action permissions
     # ==================================================================
 
-    @commands.group(name="vmodperms", aliases=["vmodperm"])
+    @commands.group(name="vmodperms", aliases=["vmodperm"], invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodperms(self, ctx: commands.Context) -> None:
-        """Manage role-based VMod action permissions."""
+        """Manage role-based VMod action permissions — shows current state when invoked alone."""
+        action_roles = await self.config.guild(ctx.guild).action_roles()
+        embed = discord.Embed(
+            title="🔑 VMod Action Permissions",
+            description=(
+                "These roles are allowed to use each VMod action.\n"
+                "Use `[p]vmodperms add @Role <key>` to grant a permission, "
+                "or `[p]vmodset wizard` to configure interactively.\n\n"
+                "**Subcommands:** `add`, `remove`, `list`, `byrole`, `info`"
+            ),
+            colour=discord.Color.blurple(),
+        )
+        for ak in ACTION_KEYS:
+            roles = [
+                ctx.guild.get_role(rid).mention
+                for rid in action_roles.get(ak, [])
+                if ctx.guild.get_role(rid)
+            ]
+            embed.add_field(
+                name=f"`{ak}`",
+                value=humanize_list(roles) if roles else "*(none)*",
+                inline=True,
+            )
+        await ctx.send(embed=embed)
 
     @vmodperms.command(name="info")
     async def perms_info(self, ctx: commands.Context) -> None:
@@ -331,7 +538,6 @@ class VModSettings(VModBase):
     async def perms_list(self, ctx: commands.Context, key: str | None = None) -> None:
         """List roles assigned to a permission key, or show all permissions."""
         action_roles = await self.config.guild(ctx.guild).action_roles()
-
         if key is not None:
             key = key.lower().strip()
             if key not in ACTION_KEYS:
@@ -351,7 +557,6 @@ class VModSettings(VModBase):
                 )
             )
             return
-
         embed = discord.Embed(title="🔑 VMod Action Permissions", colour=discord.Color.blurple())
         for ak in ACTION_KEYS:
             roles = [
@@ -359,11 +564,7 @@ class VModSettings(VModBase):
                 for rid in action_roles[ak]
                 if ctx.guild.get_role(rid)
             ]
-            embed.add_field(
-                name=f"`{ak}`",
-                value=humanize_list(roles) if roles else "*(none)*",
-                inline=True,
-            )
+            embed.add_field(name=f"`{ak}`", value=humanize_list(roles) if roles else "*(none)*", inline=True)
         await ctx.send(embed=embed)
 
     @vmodperms.command(name="byrole")
@@ -373,7 +574,7 @@ class VModSettings(VModBase):
         keys = [k for k in ACTION_KEYS if role.id in action_roles.get(k, [])]
         if keys:
             await ctx.send(
-                _("{role} has the following permissions: {keys}").format(
+                _("{role} has: {keys}").format(
                     role=role.mention,
                     keys=", ".join(f"`{k}`" for k in keys),
                 )
@@ -382,14 +583,37 @@ class VModSettings(VModBase):
             await ctx.send(_("{role} has no VMod permissions.").format(role=role.mention))
 
     # ==================================================================
-    # vmodroles — warning and muted role config (modulus rolekeys)
+    # vmodroles — warning and muted role config
     # ==================================================================
 
-    @commands.group(name="vmodroles")
+    @commands.group(name="vmodroles", invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodroles(self, ctx: commands.Context) -> None:
-        """Configure milestone warning roles and the muted role."""
+        """Configure milestone warning roles and the muted role — shows current config when invoked alone."""
+        snapshot = await self.build_settings_snapshot(ctx.guild)
+        wr = snapshot["warning_roles"]
+        guild = ctx.guild
+        embed = discord.Embed(
+            title="🏅 VMod Role Configuration",
+            description=(
+                "Set roles applied at warning milestones or for the muted state.\n"
+                "Tip: Use `[p]vmodset wizard` to configure these interactively.\n\n"
+                "**Subcommands:** `warning1`, `warning2`, `warning3`, `muted`, `show`"
+            ),
+            colour=discord.Color.blurple(),
+        )
+        for key in ("warning1", "warning2", "warning3+"):
+            role = guild.get_role(wr.get(key)) if wr.get(key) else None
+            embed.add_field(
+                name=f"⚠️ {key.capitalize()}",
+                value=role.mention if role else "*(not set)*",
+                inline=True,
+            )
+        muted_role = guild.get_role(snapshot["muted_role"]) if snapshot["muted_role"] else None
+        embed.add_field(name="🔇 Muted Role", value=muted_role.mention if muted_role else "*(not set)*", inline=True)
+        await ctx.send(embed=embed)
 
     @vmodroles.command(name="warning1")
     async def roles_warning1(self, ctx: commands.Context, role: discord.Role | None = None) -> None:
@@ -434,28 +658,44 @@ class VModSettings(VModBase):
         snapshot = await self.build_settings_snapshot(ctx.guild)
         wr = snapshot["warning_roles"]
         guild = ctx.guild
-
         embed = discord.Embed(title="🏅 VMod Role Configuration", colour=discord.Color.blurple())
         for key in ("warning1", "warning2", "warning3+"):
             role = guild.get_role(wr.get(key)) if wr.get(key) else None
-            embed.add_field(
-                name=f"⚠️ {key.capitalize()}",
-                value=role.mention if role else "*(not set)*",
-                inline=True,
-            )
+            embed.add_field(name=f"⚠️ {key.capitalize()}", value=role.mention if role else "*(not set)*", inline=True)
         muted_role = guild.get_role(snapshot["muted_role"]) if snapshot["muted_role"] else None
-        embed.add_field(name="🔇 Muted Role", value=muted_role.mention if muted_role else "*(not set)*", inline=True)
+        embed.add_field(name="�� Muted Role", value=muted_role.mention if muted_role else "*(not set)*", inline=True)
         await ctx.send(embed=embed)
 
     # ==================================================================
     # vmodratelimit — moderator rate limit config
     # ==================================================================
 
-    @commands.group(name="vmodratelimit", aliases=["vmodrl"])
+    @commands.group(name="vmodratelimit", aliases=["vmodrl"], invoke_without_command=True)
     @commands.guild_only()
     @checks.admin_or_permissions(manage_guild=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodratelimit(self, ctx: commands.Context) -> None:
-        """Configure moderator action rate limits."""
+        """Configure moderator action rate limits — shows current limits when invoked alone."""
+        limits = await self.config.guild(ctx.guild).action_rate_limits()
+        embed = discord.Embed(
+            title="⏱️ VMod Rate Limits",
+            description=(
+                "How many times a moderator role may use each action per window.\n"
+                "Exceeding the limit strips their mod roles and notifies subscribers.\n\n"
+                "**Subcommands:** `show`, `set`"
+            ),
+            colour=discord.Color.blurple(),
+        )
+        for ak, data in limits.items():
+            count = data["limit"]
+            embed.add_field(
+                name=f"`{ak}`",
+                value=_(
+                    "{count} action per {window}" if count == 1 else "{count} actions per {window}"
+                ).format(count=count, window=humanize_timedelta(seconds=int(data["window"]))),
+                inline=True,
+            )
+        await ctx.send(embed=embed)
 
     @vmodratelimit.command(name="show")
     @commands.bot_has_permissions(embed_links=True)
@@ -504,10 +744,40 @@ class VModSettings(VModBase):
     # vmodnotifs — modulus-style notification subscriptions
     # ==================================================================
 
-    @commands.group(name="vmodnotifs", aliases=["vmodnotif", "vnotifs"])
+    @commands.group(name="vmodnotifs", aliases=["vmodnotif", "vnotifs"], invoke_without_command=True)
     @checks.mod_or_permissions(manage_guild=True)
+    @commands.bot_has_permissions(embed_links=True)
     async def vmodnotifs(self, ctx: commands.Context) -> None:
-        """Manage VMod event notification subscriptions."""
+        """Manage VMod notification subscriptions — shows your subscriptions when invoked alone."""
+        data = await self.config.notif_users()
+        subscribed = [k for k in NOTIF_KEYS if ctx.author.id in data.get(k, [])]
+
+        embed = discord.Embed(
+            title="🔔 VMod Notifications",
+            description=(
+                "Subscribe to receive DMs or channel alerts when moderation events occur.\n\n"
+                "**Subcommands:** `add`, `remove`, `list`, `info`, `channel`"
+            ),
+            colour=discord.Color.blurple(),
+        )
+        if subscribed:
+            embed.add_field(
+                name="Your active subscriptions",
+                value=", ".join(f"`{k}`" for k in subscribed),
+                inline=False,
+            )
+        else:
+            embed.add_field(
+                name="Your active subscriptions",
+                value="*(none — use `[p]vmodnotifs add <key>` to subscribe)*",
+                inline=False,
+            )
+        embed.add_field(
+            name="Available keys",
+            value=", ".join(f"`{k}`" for k in NOTIF_KEYS),
+            inline=False,
+        )
+        await ctx.send(embed=embed)
 
     @vmodnotifs.command(name="info")
     async def notifs_info(self, ctx: commands.Context) -> None:
@@ -555,11 +825,7 @@ class VModSettings(VModBase):
     async def notifs_remove(
         self, ctx: commands.Context, key: str, user: discord.Member | None = None
     ) -> None:
-        """Unsubscribe a user (default: yourself) from a notification key.
-
-        **Example:**
-        - `[p]vmodnotifs remove kick`
-        """
+        """Unsubscribe a user (default: yourself) from a notification key."""
         key = key.lower().strip()
         if key not in NOTIF_KEYS:
             await ctx.send(
@@ -598,13 +864,23 @@ class VModSettings(VModBase):
                 )
             )
         else:
-            await ctx.send(_("🔕 {user} has no active notification subscriptions.").format(user=target.display_name))
+            await ctx.send(
+                _("🔕 {user} has no active notification subscriptions.").format(user=target.display_name)
+            )
 
-    # Channel notifications sub-group
-
-    @vmodnotifs.group(name="channel")
+    @vmodnotifs.group(name="channel", invoke_without_command=True)
     async def notifs_channel(self, ctx: commands.Context) -> None:
         """Manage channel-based notification subscriptions."""
+        embed = discord.Embed(
+            title="📢 Channel Notifications",
+            description=(
+                "Subscribe a text channel to receive notification embeds for moderation events.\n\n"
+                "**Subcommands:** `add`, `remove`, `list`\n\n"
+                "**Example:** `[p]vmodnotifs channel add kick #mod-log`"
+            ),
+            colour=discord.Color.blurple(),
+        )
+        await ctx.send(embed=embed)
 
     @notifs_channel.command(name="add")
     async def notifs_channel_add(
