@@ -349,7 +349,7 @@ PYEOF
         # provides the Python script on stdin (pipe + here-doc: here-doc wins,
         # leaving sys.stdin empty and json.load(sys.stdin) always failing).
         PARSED=$(DISCORD_API_RESPONSE="$DISCORD_API_RESPONSE" "$PYTHON_BIN" - <<'PYEOF'
-import json, os, sys
+import json, os
 try:
     d = json.loads(os.environ["DISCORD_API_RESPONSE"])
     team = d.get("team")
