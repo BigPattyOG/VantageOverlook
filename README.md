@@ -25,7 +25,17 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-The script installs Python 3.11, creates a dedicated `vantage` system user, sets up a virtual environment, installs dependencies, and registers a systemd service.
+`install.sh` does the following automatically:
+
+| Step | What happens |
+|------|-------------|
+| 1 | Installs Python 3.11, pip, venv, and git via `apt` |
+| 2 | **Creates a dedicated `vantage` Linux system user** at `/opt/vantage` |
+| 3 | Clones the repository to `/opt/vantage/VantageOverlook` as that user |
+| 4 | Creates a Python virtual environment and installs all dependencies |
+| 5 | Installs and enables the `vantage` systemd service (auto-starts on boot) |
+
+> **Tip:** You can also run individual steps using the Python CLI — see [System Commands](#system-commands) below.
 
 ### 2. Configure the bot
 
@@ -74,6 +84,51 @@ Start the bot.
 
 ### `python launcher.py setup`
 Interactive wizard to configure token, prefix, and owner IDs.
+
+---
+
+### System Commands
+
+These commands handle system-level setup (Linux user creation, systemd service). Most require `sudo`.
+
+```bash
+# Check overall system readiness (user, service, config)
+python launcher.py system status
+
+# Create the 'vantage' Linux system user (requires root)
+sudo python launcher.py system create-user
+
+# Install / update the systemd service (requires root)
+sudo python launcher.py system install-service
+```
+
+#### `system status` output explained
+
+```
+✅  Linux user 'vantage' — exists
+✅  Install directory (/opt/vantage/VantageOverlook) — exists
+✅  systemd service file — /etc/systemd/system/vantage.service
+✅  systemd service enabled — yes
+✅  systemd service running — yes
+✅  Bot config (data/config.json) — found
+✅  Bot token configured — yes
+```
+
+Each line is a ✅ (good) or ❌ (action needed) with the exact command to fix it.
+
+#### `system create-user` — What it creates
+
+Running `sudo python launcher.py system create-user` creates:
+
+- **Linux user**: `vantage` (system account, no login password)
+- **Home directory**: `/opt/vantage/vantage/`
+- **Shell**: `/bin/bash`
+- **Purpose**: Isolates the bot from your main user — all bot data, cog repos, and the virtual environment live under this account
+
+You can customise the username and home directory:
+```bash
+sudo python launcher.py system create-user --username mybot --home /srv
+```
 
 ---
 

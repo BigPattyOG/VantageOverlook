@@ -18,12 +18,19 @@ Usage
     python launcher.py cogs install REPO COG       # Install a cog
     python launcher.py cogs uninstall COG_PATH     # Uninstall a cog
     python launcher.py cogs autoload COG_PATH      # Toggle autoload
+
+    python launcher.py system status               # Check system readiness
+    python launcher.py system create-user          # Create 'vantage' Linux user (root)
+    python launcher.py system install-service      # Install systemd service (root)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -345,6 +352,231 @@ def cogs_autoload(cog_path: str) -> None:
             click.echo(click.style(f"✅  '{cog_path}' will NOT autoload on bot start.", fg="yellow"))
     except ValueError as exc:
         click.echo(click.style(f"❌  {exc}", fg="red"))
+
+
+# ── system ────────────────────────────────────────────────────────────────────
+
+_BOT_USER = "vantage"
+_INSTALL_DIR = Path("/opt/vantage/VantageOverlook")
+_SERVICE_SRC = Path(__file__).resolve().parent / "vantage.service"
+_SERVICE_DEST = Path("/etc/systemd/system/vantage.service")
+
+
+@cli.group()
+def system() -> None:
+    """System-level setup commands (user creation, service install).
+
+    Most commands here require root / sudo.
+    """
+
+
+@system.command("status")
+def system_status() -> None:
+    """Show system readiness: Linux user, service, config, and data directory."""
+    click.echo(click.style("\n🔍  Vantage System Status\n", bold=True))
+
+    # 1 — Linux user
+    user_ok = _user_exists(_BOT_USER)
+    _status_line(f"Linux user '{_BOT_USER}'", user_ok,
+                 ok_detail="exists",
+                 fail_detail=f"not found — run: sudo python launcher.py system create-user")
+
+    # 2 — install directory
+    dir_ok = _INSTALL_DIR.exists()
+    _status_line(f"Install directory ({_INSTALL_DIR})", dir_ok,
+                 ok_detail="exists",
+                 fail_detail="not found (run install.sh or deploy manually)")
+
+    # 3 — systemd service file
+    svc_ok = _SERVICE_DEST.exists()
+    _status_line("systemd service file", svc_ok,
+                 ok_detail=str(_SERVICE_DEST),
+                 fail_detail=f"not installed — run: sudo python launcher.py system install-service")
+
+    # 4 — service enabled/running
+    if shutil.which("systemctl"):
+        enabled = subprocess.run(
+            ["systemctl", "is-enabled", "vantage"], capture_output=True, text=True
+        ).returncode == 0
+        running = subprocess.run(
+            ["systemctl", "is-active", "vantage"], capture_output=True, text=True
+        ).returncode == 0
+        _status_line("systemd service enabled", enabled,
+                     ok_detail="yes", fail_detail="no")
+        _status_line("systemd service running", running,
+                     ok_detail="yes", fail_detail="no — run: sudo systemctl start vantage")
+    else:
+        click.echo("  " + click.style("⚠ ", fg="yellow") + "systemctl not found — not running on systemd")
+
+    # 5 — config
+    from core.config import CONFIG_PATH
+    cfg_ok = CONFIG_PATH.exists()
+    _status_line("Bot config (data/config.json)", cfg_ok,
+                 ok_detail="found",
+                 fail_detail="missing — run: python launcher.py setup")
+
+    if cfg_ok:
+        from core.config import load_config
+        cfg = load_config()
+        token_ok = bool(cfg.get("token", "").strip())
+        _status_line("Bot token configured", token_ok,
+                     ok_detail="yes",
+                     fail_detail="no — run: python launcher.py setup")
+
+    click.echo()
+
+
+@system.command("create-user")
+@click.option("--username", default=_BOT_USER, show_default=True,
+              help="Name of the Linux user to create.")
+@click.option("--home", default="/opt/vantage", show_default=True,
+              help="Home directory for the new user.")
+def system_create_user(username: str, home: str) -> None:
+    """Create the 'vantage' Linux system user for running the bot.
+
+    Requires root (sudo).
+
+    The user is created as a system account with a home directory at
+    /opt/vantage (by default). Bot data, the virtual environment, and
+    cloned cog repos all live inside this home directory.
+
+    Example:
+        sudo python launcher.py system create-user
+    """
+    if os.geteuid() != 0:
+        click.echo(click.style("❌  This command must be run as root.", fg="red"))
+        click.echo("     Try: " + click.style(f"sudo python launcher.py system create-user", bold=True))
+        sys.exit(1)
+
+    if _user_exists(username):
+        click.echo(click.style(f"✅  User '{username}' already exists.", fg="green"))
+        _print_user_info(username)
+        return
+
+    home_path = Path(home)
+    click.echo(click.style(f"\n👤  Creating system user '{username}'…\n", bold=True))
+    click.echo(f"   Username  : {username}")
+    click.echo(f"   Home dir  : {home_path / username}")
+    click.echo(f"   Shell     : /bin/bash")
+    click.echo(f"   Type      : system account (no login password)\n")
+
+    try:
+        home_path.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [
+                "useradd",
+                "--system",
+                "--shell", "/bin/bash",
+                "--home-dir", str(home_path / username),
+                "--create-home",
+                username,
+            ],
+            check=True,
+        )
+        click.echo(click.style(f"✅  User '{username}' created successfully.", fg="green"))
+        _print_user_info(username)
+    except subprocess.CalledProcessError as exc:
+        click.echo(click.style(f"❌  Failed to create user: {exc}", fg="red"))
+        sys.exit(1)
+
+
+@system.command("install-service")
+@click.option("--user", default=_BOT_USER, show_default=True,
+              help="Linux user the service will run as.")
+@click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
+              help="Absolute path to the VantageOverlook directory.")
+def system_install_service(user: str, install_dir: str) -> None:
+    """Install (or update) the vantage systemd service.
+
+    Requires root (sudo).
+
+    Copies vantage.service into /etc/systemd/system/, patches the User,
+    WorkingDirectory, and ExecStart paths, then enables the service so it
+    starts automatically on boot.
+
+    Example:
+        sudo python launcher.py system install-service
+        sudo systemctl start vantage
+    """
+    if os.geteuid() != 0:
+        click.echo(click.style("❌  This command must be run as root.", fg="red"))
+        click.echo("     Try: " + click.style("sudo python launcher.py system install-service", bold=True))
+        sys.exit(1)
+
+    if not _SERVICE_SRC.exists():
+        click.echo(click.style(f"❌  Service template not found: {_SERVICE_SRC}", fg="red"))
+        sys.exit(1)
+
+    install_path = Path(install_dir)
+    venv_python = install_path / "venv" / "bin" / "python"
+
+    click.echo(click.style("\n⚙️   Installing systemd service…\n", bold=True))
+    click.echo(f"   Service file  : {_SERVICE_DEST}")
+    click.echo(f"   Run as user   : {user}")
+    click.echo(f"   Working dir   : {install_path}")
+    click.echo(f"   Python        : {venv_python}\n")
+
+    # Read the template, patch the three fields
+    content = _SERVICE_SRC.read_text(encoding="utf-8")
+    patched_lines = []
+    for line in content.splitlines():
+        if line.startswith("User="):
+            patched_lines.append(f"User={user}")
+        elif line.startswith("WorkingDirectory="):
+            patched_lines.append(f"WorkingDirectory={install_path}")
+        elif line.startswith("ExecStart="):
+            patched_lines.append(f"ExecStart={venv_python} launcher.py start")
+        else:
+            patched_lines.append(line)
+
+    _SERVICE_DEST.write_text("\n".join(patched_lines) + "\n", encoding="utf-8")
+
+    try:
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "enable", "vantage"], check=True)
+        click.echo(click.style("✅  Service installed and enabled.", fg="green"))
+        click.echo("\nStart the bot now with:")
+        click.echo("  " + click.style("sudo systemctl start vantage", bold=True))
+        click.echo("Watch the logs:")
+        click.echo("  " + click.style("sudo journalctl -u vantage -f", bold=True))
+    except FileNotFoundError:
+        click.echo(click.style("⚠  systemctl not found — are you on a systemd system?", fg="yellow"))
+    except subprocess.CalledProcessError as exc:
+        click.echo(click.style(f"❌  systemctl error: {exc}", fg="red"))
+        sys.exit(1)
+
+
+# ── system helpers ────────────────────────────────────────────────────────────
+
+
+def _user_exists(username: str) -> bool:
+    """Return True if a Linux user with the given name exists."""
+    try:
+        import pwd
+        pwd.getpwnam(username)
+        return True
+    except KeyError:
+        return False
+
+
+def _print_user_info(username: str) -> None:
+    """Print a brief summary of the user's home directory and next steps."""
+    try:
+        import pwd
+        pw = pwd.getpwnam(username)
+        click.echo(f"\n   Home directory : {pw.pw_dir}")
+        click.echo(f"   UID            : {pw.pw_uid}\n")
+    except KeyError:
+        pass
+    click.echo("Next steps:")
+    click.echo(f"  Switch to the user : " + click.style(f"sudo -u {username} bash", bold=True))
+    click.echo(f"  Run the setup wizard: " + click.style("python launcher.py setup", bold=True))
+
+
+def _status_line(label: str, ok: bool, ok_detail: str = "", fail_detail: str = "") -> None:
+    icon = click.style("✅", fg="green") if ok else click.style("❌", fg="red")
+    detail = ok_detail if ok else click.style(fail_detail, fg="yellow")
+    click.echo(f"  {icon}  {label}" + (f" — {detail}" if detail else ""))
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

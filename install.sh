@@ -43,6 +43,10 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 [[ $EUID -ne 0 ]] && error "Please run as root: sudo ./install.sh"
 
 # ── system packages ───────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Step 1/5 — System packages                            ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 info "Updating package lists…"
 apt-get update -qq
 
@@ -53,14 +57,34 @@ apt-get install -y -qq python3.11 python3.11-venv python3-pip git
 update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 2>/dev/null || true
 
 # ── bot user ──────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Step 2/5 — Linux system user                          ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
 if id "$BOT_USER" &>/dev/null; then
     warn "User '$BOT_USER' already exists — skipping creation."
+    echo "   Home : $(getent passwd "$BOT_USER" | cut -d: -f6)"
 else
-    info "Creating system user '$BOT_USER'…"
-    useradd --system --shell /bin/bash --create-home "$BOT_USER"
+    info "Creating Linux system user '$BOT_USER'…"
+    echo "   Username  : $BOT_USER"
+    echo "   Home dir  : $(dirname "$INSTALL_DIR")"
+    echo "   Shell     : /bin/bash"
+    echo "   Type      : system account (no login password)"
+    useradd --system --shell /bin/bash \
+        --home-dir "$(dirname "$INSTALL_DIR")" \
+        --create-home "$BOT_USER"
+    info "User '$BOT_USER' created ✓"
+    echo ""
+    echo "  All bot data, cog repos, and the virtual environment will"
+    echo "  live under this user's home directory for security isolation."
 fi
+echo ""
 
 # ── repository ────────────────────────────────────────────────────────────────
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Step 3/5 — Repository                                 ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 mkdir -p "$(dirname "$INSTALL_DIR")"
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -74,6 +98,10 @@ fi
 chown -R "$BOT_USER:$BOT_USER" "$INSTALL_DIR"
 
 # ── virtual environment ───────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Step 4/5 — Python environment                         ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 info "Creating Python virtual environment…"
 sudo -u "$BOT_USER" python3.11 -m venv "$INSTALL_DIR/venv"
 
@@ -86,6 +114,10 @@ info "Ensuring data directories exist…"
 sudo -u "$BOT_USER" mkdir -p "$INSTALL_DIR/data/repos"
 
 # ── systemd service ───────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Step 5/5 — systemd service                            ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 info "Installing systemd service…"
 cp "$INSTALL_DIR/$SERVICE_FILE" "$SYSTEMD_DEST"
 
