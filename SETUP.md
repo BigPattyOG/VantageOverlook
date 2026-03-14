@@ -325,7 +325,7 @@ sudo -u vprodbot nano /opt/vprod/.env
 The file should contain (replace the placeholder with your actual token from step 2b):
 
 ```
-DISCORD_TOKEN=MTI3NTQxMzk2N...your_full_token_here
+DISCORD_TOKEN=your_bot_token_from_the_discord_developer_portal
 ```
 
 Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X` in nano). Then lock it down immediately:
