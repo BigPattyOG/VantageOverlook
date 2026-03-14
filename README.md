@@ -41,14 +41,14 @@ vantage@.service    systemd template unit (multi-bot support)
 
 | Path | Purpose |
 |------|---------|
-| `/opt/vantage/<BotName>/` | Git clone (code, venv) |
-| `/var/lib/vantage/<BotName>/` | Mutable data (config.json, cog_data.json, guild files, cloned repos) |
-| `/var/log/vantage/` | Log files (via journald) |
+| `/opt/<BotName>/` | Git clone (code, venv) |
+| `/var/lib/<BotName>/` | Mutable data (config.json, cog_data.json, guild files, cloned repos) |
+| `/var/log/<BotName>/` | Log files (via journald) |
 | `/usr/local/bin/vmanage` | System-wide CLI (symlink or copy) |
 
 **Data directory resolution** (checked in order):
 1. `VANTAGE_DATA_DIR` environment variable
-2. `/var/lib/vantage/<BotName>/` when code is under `/opt/vantage/<BotName>/`
+2. `/var/lib/<BotName>/` when code is under `/opt/<BotName>/`
 3. `data/` relative to the project root (local development fallback)
 
 **Boot sequence:**
@@ -75,16 +75,16 @@ sudo apt install -y git python3 python3-pip python3-venv build-essential
 
 ```bash
 sudo useradd --system --shell /bin/bash \
-    --home-dir /opt/vantage --create-home vantage
+    --home-dir /opt --create-home vantage
 ```
 
 ### 3. Clone the repository
 
 ```bash
-sudo mkdir -p /opt/vantage
+sudo mkdir -p /opt/MyBot
 sudo git clone https://github.com/BigPattyOG/VantageOverlook.git \
-    /opt/vantage/MyBot
-sudo chown -R vantage:vantage /opt/vantage/MyBot
+    /opt/MyBot
+sudo chown -R vantage:vantage /opt/MyBot
 ```
 
 Replace `MyBot` with your preferred bot name (used for the service instance and data directory).
@@ -93,7 +93,7 @@ Replace `MyBot` with your preferred bot name (used for the service instance and 
 
 ```bash
 sudo -u vantage bash -c "
-    cd /opt/vantage/MyBot
+    cd /opt/MyBot
     python3 -m venv venv
     venv/bin/pip install --upgrade pip
     venv/bin/pip install -r requirements.txt
@@ -103,9 +103,9 @@ sudo -u vantage bash -c "
 ### 5. Create the data directory
 
 ```bash
-sudo mkdir -p /var/lib/vantage/MyBot
-sudo chown -R vantage:vantage /var/lib/vantage/MyBot
-sudo chmod 750 /var/lib/vantage/MyBot
+sudo mkdir -p /var/lib/MyBot
+sudo chown -R vantage:vantage /var/lib/MyBot
+sudo chmod 750 /var/lib/MyBot
 ```
 
 ### 6. Configure the bot
@@ -114,23 +114,23 @@ Run the interactive setup wizard as the `vantage` user:
 
 ```bash
 sudo -u vantage bash -c "
-    cd /opt/vantage/MyBot
-    VANTAGE_DATA_DIR=/var/lib/vantage/MyBot venv/bin/python launcher.py setup
+    cd /opt/MyBot
+    VANTAGE_DATA_DIR=/var/lib/MyBot venv/bin/python launcher.py setup
 "
 ```
 
-This writes `/var/lib/vantage/MyBot/config.json` with your token, prefix, and owner IDs.
+This writes `/var/lib/MyBot/config.json` with your token, prefix, and owner IDs.
 
 Lock down the config file:
 
 ```bash
-sudo chmod 600 /var/lib/vantage/MyBot/config.json
+sudo chmod 600 /var/lib/MyBot/config.json
 ```
 
 ### 7. Install the systemd service
 
 ```bash
-sudo cp /opt/vantage/MyBot/vantage@.service \
+sudo cp /opt/MyBot/vantage@.service \
     /etc/systemd/system/vantage@.service
 sudo systemctl daemon-reload
 sudo systemctl enable vantage@MyBot
@@ -147,7 +147,7 @@ sudo journalctl -u vantage@MyBot -f
 ### 8. Install vmanage system-wide
 
 ```bash
-sudo ln -sf /opt/vantage/MyBot/vmanage.py /usr/local/bin/vmanage
+sudo ln -sf /opt/MyBot/vmanage.py /usr/local/bin/vmanage
 sudo chmod +x /usr/local/bin/vmanage
 ```
 
@@ -188,7 +188,7 @@ vmanage MyBot --repos           # list cog repositories
 vmanage MyBot --debug           # show debug resolution info
 ```
 
-Bot discovery: scans `/opt/vantage/` for subdirectories. Name matching is case-insensitive and supports prefix matching (`vmanage my` matches `MyBot` if unambiguous).
+Bot discovery: scans `/opt/` for subdirectories containing `launcher.py`. Name matching is case-insensitive and supports prefix matching (`vmanage my` matches `MyBot` if unambiguous).
 
 ---
 
@@ -254,7 +254,7 @@ The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry fro
 
 ## Configuration
 
-**`/var/lib/vantage/<BotName>/config.json`** (permissions: `600`):
+**`/var/lib/<BotName>/config.json`** (permissions: `600`):
 
 ```json
 {
@@ -295,7 +295,7 @@ Cogs are Python extensions.  The loader (`CogManager`) stores state in `<data_di
 `<data_dir>/repos/` is inserted into `sys.path` at bot startup.  This means:
 
 ```
-/var/lib/vantage/MyBot/repos/
+/var/lib/MyBot/repos/
   my_cogs/
     greet.py          → importable as  my_cogs.greet
     welcome/
@@ -354,7 +354,7 @@ Files live at `<data_dir>/guilds/{guild_id}.json`.
 ## Project Structure
 
 ```
-VantageOverlook/                  → /opt/vantage/MyBot/  (git clone)
+VantageOverlook/                  → /opt/MyBot/  (git clone)
 ├── vmanage.py           System-wide CLI management tool
 ├── launcher.py          Bot-scoped CLI (start, setup, repos, cogs, system)
 ├── vantage@.service     systemd template unit (multi-bot support via %i)
@@ -374,7 +374,7 @@ VantageOverlook/                  → /opt/vantage/MyBot/  (git clone)
 └── cogs/
     └── admin.py         Built-in admin cog (always loaded)
 
-/var/lib/vantage/MyBot/           (mutable data — gitignored)
+/var/lib/MyBot/           (mutable data — gitignored)
 ├── config.json
 ├── cog_data.json
 ├── repos/
@@ -433,15 +433,15 @@ async def setup(bot):
 Run multiple independent Vantage instances on one server using the `vantage@.service` template:
 
 ```bash
-# Clone bot 1 to /opt/vantage/Alpha
-sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vantage/Alpha
-sudo mkdir -p /var/lib/vantage/Alpha
+# Clone bot 1 to /opt/Alpha
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/Alpha
+sudo mkdir -p /var/lib/Alpha
 # ... follow steps 4-6 for Alpha ...
 sudo systemctl enable --now vantage@Alpha
 
-# Clone bot 2 to /opt/vantage/Beta
-sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vantage/Beta
-sudo mkdir -p /var/lib/vantage/Beta
+# Clone bot 2 to /opt/Beta
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/Beta
+sudo mkdir -p /var/lib/Beta
 # ... follow steps 4-6 for Beta ...
 sudo systemctl enable --now vantage@Beta
 

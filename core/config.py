@@ -6,7 +6,7 @@ The file is created automatically on first run by ``launcher.py setup``.
 Data directory resolution order
 --------------------------------
 1. ``VANTAGE_DATA_DIR`` environment variable (explicit override).
-2. ``/var/lib/vantage/<name>/`` when the code lives under ``/opt/vantage/``.
+2. ``/var/lib/<name>/`` when the code lives under ``/opt/<name>/``.
 3. Local ``data/`` directory (development fallback).
 """
 
@@ -24,8 +24,8 @@ def resolve_data_dir() -> Path:
     Resolution order:
 
     1. ``VANTAGE_DATA_DIR`` environment variable — explicit override.
-    2. ``/var/lib/vantage/<name>/`` when this file is located under
-       ``/opt/vantage/<name>/`` (production layout).
+    2. ``/var/lib/<name>/`` when this file is located under
+       ``/opt/<name>/`` (production layout).
     3. ``data/`` relative to the project root (development fallback).
     """
     # 1 — explicit env var
@@ -33,16 +33,16 @@ def resolve_data_dir() -> Path:
     if env_dir:
         return Path(env_dir)
 
-    # 2 — production layout: code lives at /opt/vantage/<BotName>/...
+    # 2 — production layout: code lives at /opt/<BotName>/...
     this_file = Path(__file__).resolve()
     try:
-        opt_vantage = Path("/opt/vantage")
-        # Walk up until we find the direct child of /opt/vantage
+        opt = Path("/opt")
+        # Walk up until we find the direct child of /opt
         parts = this_file.parts
-        opt_parts = opt_vantage.parts
+        opt_parts = opt.parts
         if parts[: len(opt_parts)] == opt_parts and len(parts) > len(opt_parts):
-            bot_name = parts[len(opt_parts)]  # e.g. "MyBot"
-            return Path("/var/lib/vantage") / bot_name
+            bot_name = parts[len(opt_parts)]  # e.g. "vprod"
+            return Path("/var/lib") / bot_name
     except Exception:
         pass
 

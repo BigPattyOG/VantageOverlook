@@ -10,7 +10,7 @@ Directory layout
 ``<data_dir>/cog_data.json``  — Persisted repo / cog registry.
 
 The data directory is resolved via :func:`core.config.resolve_data_dir` (checks
-``VANTAGE_DATA_DIR`` env var, then ``/var/lib/vantage/<BotName>``, then local
+``VANTAGE_DATA_DIR`` env var, then ``/var/lib/<BotName>``, then local
 ``data/`` fallback).
 
 Cog module paths
