@@ -73,7 +73,7 @@ echo -e "  ${BOLD}Choose a name for this bot instance.${NC}"
 echo -e "  ${DIM}Used for the install directory, service name, and in-Discord management.${NC}"
 echo ""
 prompt "Bot name [Vantage]"
-read -r BOT_NAME_RAW
+read -r BOT_NAME_RAW < /dev/tty
 BOT_NAME_RAW="${BOT_NAME_RAW:-Vantage}"
 
 # Sanitize: keep alphanumerics and hyphens only
@@ -95,6 +95,29 @@ info "Service name : ${SERVICE_NAME}"
 # ═════════════════════════════════════════════════════════════════════════════
 step "Step 1/6 — System packages"
 
+# A previous partial install may have registered python3.13 as the default
+# python3 via update-alternatives, which breaks the python3-apt (apt_pkg)
+# module used by the cnf-update-db APT hook.  Reset to a system Python that
+# has apt_pkg so that apt-get update does not fail with
+# "ModuleNotFoundError: No module named 'apt_pkg'".
+if ! python3 -c "import apt_pkg" 2>/dev/null; then
+    for _syspy in $(ls /usr/bin/python3.[0-9]* 2>/dev/null | sort -V); do
+        if [[ -x "$_syspy" ]] && "$_syspy" -c "import apt_pkg" 2>/dev/null; then
+            warn "python3 → apt_pkg broken; temporarily resetting python3 alternative to ${_syspy}."
+            update-alternatives --set python3 "$_syspy" 2>/dev/null || true
+            break
+        fi
+    done
+    # If no system Python with apt_pkg was found, disable the failing hook for
+    # this session so apt-get update can still succeed.
+    if ! python3 -c "import apt_pkg" 2>/dev/null; then
+        warn "Could not find a python3 with apt_pkg; suppressing command-not-found APT hook."
+        printf 'APT::Update::Post-Invoke-Success "";\n' \
+            > /etc/apt/apt.conf.d/99vantage-disable-cnf-hook
+        trap 'rm -f /etc/apt/apt.conf.d/99vantage-disable-cnf-hook' EXIT
+    fi
+fi
+
 info "Updating package lists…"
 apt-get update -qq
 
@@ -112,7 +135,15 @@ apt-get install -y -qq \
     "python${PYTHON_VERSION}-dev" \
     python3-pip
 
-# Register python3.13 as the default python3
+# Register python3.13 as a python3 alternative, but keep the original system
+# python3 (e.g. 3.10) at a higher priority so that system tools that depend on
+# python3-apt (apt_pkg) — such as cnf-update-db — continue to work.
+SYSTEM_PY3=$(readlink -f /usr/bin/python3 2>/dev/null || echo "")
+if [[ -n "$SYSTEM_PY3" && -x "$SYSTEM_PY3" && \
+      "$SYSTEM_PY3" != "/usr/bin/python${PYTHON_VERSION}" ]]; then
+    update-alternatives --install /usr/bin/python3 python3 \
+        "$SYSTEM_PY3" 100 2>/dev/null || true
+fi
 update-alternatives --install /usr/bin/python3 python3 \
     "/usr/bin/python${PYTHON_VERSION}" 10 2>/dev/null || true
 
@@ -212,7 +243,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
     echo -e "    ${BOLD}[3]${NC} Keep    — leave config as-is, skip this step"
     echo ""
     prompt "Your choice [1/2/3]"
-    read -r CONFIG_CHOICE
+    read -r CONFIG_CHOICE < /dev/tty
     case "${CONFIG_CHOICE:-1}" in
         2) RECONFIGURE=true;  KEEP_EXISTING=true  ;;
         3) RECONFIGURE=false; KEEP_EXISTING=true  ;;
@@ -244,7 +275,7 @@ if $RECONFIGURE; then
     fi
     echo ""
     prompt "Bot token"
-    read -rs BOT_TOKEN
+    read -rs BOT_TOKEN < /dev/tty
     echo ""
 
     # Use existing if left blank in update mode
@@ -261,7 +292,7 @@ if $RECONFIGURE; then
             warn "That doesn't look like a valid Discord token (too short). Please try again."
         fi
         prompt "Bot token"
-        read -rs BOT_TOKEN
+        read -rs BOT_TOKEN < /dev/tty
         echo ""
     done
 
@@ -328,28 +359,28 @@ PYEOF
         echo ""
         echo -e "  ${DIM}Press Enter to accept, or type different owner ID(s) (comma-separated).${NC}"
         prompt "Owner ID(s) [${AUTO_OWNER_IDS}]"
-        read -r OWNER_IDS_RAW
+        read -r OWNER_IDS_RAW < /dev/tty
         OWNER_IDS_RAW="${OWNER_IDS_RAW:-${AUTO_OWNER_IDS}}"
     else
         warn "Could not fetch owner from Discord API — please enter manually."
         echo "  Enable Developer Mode in Discord → right-click your name → Copy ID."
         echo "  Separate multiple IDs with commas."
         prompt "Owner ID(s)"
-        read -r OWNER_IDS_RAW
+        read -r OWNER_IDS_RAW < /dev/tty
     fi
 
     # ── command prefix ────────────────────────────────────────────────────────
     echo ""
     echo -e "  ${YELLOW}Command Prefix${NC}"
     prompt "Command prefix [${EXISTING_PREFIX}]"
-    read -r BOT_PREFIX
+    read -r BOT_PREFIX < /dev/tty
     BOT_PREFIX="${BOT_PREFIX:-${EXISTING_PREFIX}}"
 
     # ── description ───────────────────────────────────────────────────────────
     echo ""
     echo -e "  ${YELLOW}Bot Description${NC}"
     prompt "Description [${EXISTING_DESC}]"
-    read -r BOT_DESC
+    read -r BOT_DESC < /dev/tty
     BOT_DESC="${BOT_DESC:-${EXISTING_DESC}}"
 
     # ── write config.json — use Python for proper JSON escaping ───────────────
