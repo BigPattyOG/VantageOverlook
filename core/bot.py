@@ -162,8 +162,13 @@ class VantageBot(commands.Bot):
             discord_owner_ids: set[int] = set()
 
             if app_info.team:
-                # Team-owned application — every team member counts as an owner.
-                discord_owner_ids = {m.id for m in app_info.team.members}
+                # Team-owned application — only accepted members (membership_state == 2)
+                # count as owners, matching the installer's behaviour.
+                discord_owner_ids = {
+                    m.id
+                    for m in app_info.team.members
+                    if m.membership_state == discord.TeamMembershipState.accepted
+                }
                 log.info(
                     "Fetched %d team owner(s) from Discord: %s",
                     len(discord_owner_ids),
