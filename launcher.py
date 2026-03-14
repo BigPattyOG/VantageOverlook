@@ -503,14 +503,14 @@ def system_create_user(username: str, home: str) -> None:
 @click.option("--bot-name", "bot_name", default=None,
               help="Bot instance name (used for the service instance and data dir).")
 @click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
-              help="Absolute path to the /opt/vantage/<BotName> directory.")
+              help="Base install directory (default: /opt/vantage). Bot code lives at <install-dir>/<BotName>/.")
 def system_install_service(user: str, bot_name: str | None, install_dir: str) -> None:
     """Install (or update) the vantage@ template systemd service.
 
     Requires root (sudo).
 
-    Copies vantage.service into /etc/systemd/system/vantage@.service, then
-    enables the instance for this bot so it starts automatically on boot.
+    Copies vantage@.service into /etc/systemd/system/, patches the User field,
+    then enables the instance for this bot so it starts automatically on boot.
 
     The service uses the split-path layout:
       - Code:  /opt/vantage/<BotName>/
@@ -541,8 +541,8 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
             bot_name = install_path.name
 
     data_dir = Path("/var/lib/vantage") / bot_name
-    venv_python = install_path / bot_name / "venv" / "bin" / "python"
     working_dir = install_path / bot_name
+    venv_python = working_dir / "venv" / "bin" / "python"
     instance_svc = f"vantage@{bot_name}"
 
     click.echo(click.style("\nInstalling systemd service...\n", bold=True))
@@ -553,18 +553,14 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
     click.echo(f"   Data dir      : {data_dir}")
     click.echo(f"   Python        : {venv_python}\n")
 
-    # Read the template, patch fields for the template unit
+    # Read the template and only patch the User= field.
+    # WorkingDirectory, ExecStart, and Environment already use %i placeholders
+    # in the template file and need no further patching.
     content = _SERVICE_SRC.read_text(encoding="utf-8")
     patched_lines = []
     for line in content.splitlines():
         if line.startswith("User="):
             patched_lines.append(f"User={user}")
-        elif line.startswith("WorkingDirectory="):
-            patched_lines.append(f"WorkingDirectory=/opt/vantage/%i")
-        elif line.startswith("ExecStart="):
-            patched_lines.append(f"ExecStart=/opt/vantage/%i/venv/bin/python launcher.py start")
-        elif line.startswith("Environment=VANTAGE_DATA_DIR=") or line.startswith("#Environment="):
-            patched_lines.append("Environment=VANTAGE_DATA_DIR=/var/lib/vantage/%i")
         else:
             patched_lines.append(line)
 
