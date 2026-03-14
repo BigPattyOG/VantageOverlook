@@ -6,11 +6,11 @@ Directory layout
 ----------------
 ``<data_dir>/repos/``         — root for all repos (added to sys.path at startup).
 ``<data_dir>/repos/<name>/``  — GitHub repos cloned here.
-``<data_dir>/repos/<name>``   — Local repos symlinked here (symlink → local path).
+``<data_dir>/repos/<name>``   — Local repos symlinked here (symlink -> local path).
 ``<data_dir>/cog_data.json``  — Persisted repo / cog registry.
 
 The data directory is resolved via :func:`core.config.resolve_data_dir` (checks
-``VANTAGE_DATA_DIR`` env var, then ``/var/lib/vantage/<BotName>``, then local
+``VPROD_DATA_DIR`` env var, then ``/var/lib/vprod/<BotName>``, then local
 ``data/`` fallback).
 
 Cog module paths

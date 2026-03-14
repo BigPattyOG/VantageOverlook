@@ -1,0 +1,28 @@
+[Unit]
+Description=vprod Discord Bot (%i)
+After=network.target
+
+[Service]
+Type=simple
+# System account that runs the bot — created by: sudo python launcher.py system create-user
+User=vprodbot
+# Split-path layout:
+#   Code  -> /opt/vprod/%i/      (git clone)
+#   Data  -> /var/lib/vprod/%i/  (config, cog data, guild files)
+#   Token -> .env file in the working directory (DISCORD_TOKEN)
+#   Logs  -> journald (journalctl -u vprod@%i -f)
+WorkingDirectory=/opt/vprod/%i
+EnvironmentFile=-/opt/vprod/%i/.env
+Environment=VPROD_DATA_DIR=/var/lib/vprod/%i
+ExecStart=/opt/vprod/%i/venv/bin/python launcher.py start
+Restart=on-failure
+RestartSec=5
+# Give the bot 30 seconds to shut down cleanly before systemd kills it
+TimeoutStopSec=30
+# Log to the journal — view with: journalctl -u vprod@%i -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vprod-%i
+
+[Install]
+WantedBy=multi-user.target

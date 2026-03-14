@@ -1,10 +1,11 @@
-"""VantageBot — main bot class.
+"""vprod — main bot class.
 
 Extends ``discord.ext.commands.Bot`` with:
 * CogManager integration (sys.path setup + autoload at startup).
 * Graceful error handling with embed responses.
 * Dynamic prefix from config.
 * Built-in ``cogs.admin`` always loaded.
+* Owners resolved automatically from the Discord application/team.
 """
 
 from __future__ import annotations
@@ -20,13 +21,16 @@ from discord.ext import commands
 from .cog_manager import CogManager
 from .help_command import VantageHelp
 
-log = logging.getLogger("vantage")
+log = logging.getLogger("vprod")
 
 BUILTIN_EXTENSIONS = ["cogs.admin"]
 
+# Teal — primary brand colour used for all non-error embeds
+TEAL = discord.Color.from_str("#2DC5C5")
+
 
 class VantageBot(commands.Bot):
-    """The main Vantage bot instance."""
+    """The main vprod bot instance."""
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
@@ -41,7 +45,7 @@ class VantageBot(commands.Bot):
             command_prefix=commands.when_mentioned_or(config.get("prefix", "!")),
             intents=intents,
             owner_ids=set(config.get("owner_ids", [])),
-            description=config.get("description", "Vantage Discord Bot"),
+            description=config.get("description", "vprod Discord Bot"),
             help_command=VantageHelp(),
         )
 
@@ -162,8 +166,7 @@ class VantageBot(commands.Bot):
             discord_owner_ids: set[int] = set()
 
             if app_info.team:
-                # Team-owned application — only accepted members (membership_state == 2)
-                # count as owners, matching the installer's behaviour.
+                # Team-owned application — only accepted members count as owners.
                 discord_owner_ids = {
                     m.id
                     for m in app_info.team.members
@@ -185,7 +188,6 @@ class VantageBot(commands.Bot):
                 log.warning("Discord application info returned no owner and no team.")
 
             # Merge Discord owners with any extra IDs already in owner_ids
-            # (config can list additional owners beyond the app owner).
             self.owner_ids = discord_owner_ids | self.owner_ids
         except Exception:
             log.warning(
