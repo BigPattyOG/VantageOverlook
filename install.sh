@@ -177,6 +177,12 @@ info "Ensuring runtime data directories exist…"
 sudo -u "$BOT_USER" mkdir -p "$INSTALL_DIR/data/repos"
 sudo -u "$BOT_USER" mkdir -p "$INSTALL_DIR/data/guilds"
 
+# ── install vmanage as a system-wide command ──────────────────────────────────
+info "Installing vmanage CLI to /usr/local/bin/vmanage…"
+chmod +x "$INSTALL_DIR/vmanage.py"
+ln -sf "$INSTALL_DIR/vmanage.py" /usr/local/bin/vmanage
+info "vmanage installed — try: vmanage ${BOT_NAME}"
+
 # Show installed packages summary
 echo ""
 echo -e "  ${BOLD}Installed packages:${NC}"
@@ -522,11 +528,20 @@ install.sh
     Or via curl (one-liner):
       curl -sSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh | sudo bash
 
-run.sh
-    Interactive management menu for the running bot.  Provides a friendly
-    terminal UI to start / stop / restart the bot, view live logs, trigger
-    updates, and re-run setup without memorising systemd commands.
-    Run with:  ./run.sh   (or  sudo ./run.sh  for service control)
+vmanage.py
+    Standalone CLI management tool — installed to /usr/local/bin/vmanage.
+    Uses only the Python standard library (no venv needed).  Usage:
+      vmanage                         list all installed bots
+      vmanage ${BOT_NAME}               show status dashboard
+      vmanage ${BOT_NAME} --start       start the bot
+      vmanage ${BOT_NAME} --stop        stop the bot
+      vmanage ${BOT_NAME} --restart     restart the bot
+      vmanage ${BOT_NAME} --logs        stream live logs
+      vmanage ${BOT_NAME} --logs --lines 50  last 50 log lines
+      vmanage ${BOT_NAME} --update      git pull + pip upgrade + restart
+      vmanage ${BOT_NAME} --setup       re-run setup wizard
+      vmanage ${BOT_NAME} --cogs        list installed cogs
+      vmanage ${BOT_NAME} --repos       list cog repos
 
 requirements.txt
     Python package dependencies installed into the virtual environment:
@@ -649,14 +664,16 @@ echo -e "  ${BOLD}Config file       :${NC} $CONFIG_FILE"
 echo ""
 echo -e "  ${BOLD}Next steps:${NC}"
 echo ""
-echo -e "  ${CYAN}▶  Watch live logs${NC}"
-echo "       sudo journalctl -u ${SERVICE_NAME} -f"
+echo -e "  ${CYAN}▶  Status dashboard (new!)${NC}"
+echo "       vmanage ${BOT_NAME}"
 echo ""
-echo -e "  ${CYAN}▶  Use the interactive manager${NC}"
-echo "       sudo $INSTALL_DIR/run.sh"
+echo -e "  ${CYAN}▶  Stream live logs${NC}"
+echo "       vmanage ${BOT_NAME} --logs"
 echo ""
-echo -e "  ${CYAN}▶  Service control${NC}"
-echo "       sudo systemctl start|stop|restart|status ${SERVICE_NAME}"
+echo -e "  ${CYAN}▶  Common service commands${NC}"
+echo "       vmanage ${BOT_NAME} --restart"
+echo "       vmanage ${BOT_NAME} --stop"
+echo "       vmanage ${BOT_NAME} --update"
 echo ""
 echo -e "  ${CYAN}▶  In Discord (owner only)${NC}"
 echo "       ${BOT_PREFIX:-!}vmanage          — management panel with buttons"

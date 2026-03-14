@@ -224,8 +224,11 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     cfg = bot.config
     bot_name = cfg.get("name", "Vantage")
     service_name = cfg.get("service_name", "vantage")
-    # Validate service name before passing to subprocess
+    # Validate service name before passing to subprocess; log a warning if invalid.
     if not re.match(r'^[a-z][a-z0-9-]*$', service_name):
+        log.warning(
+            "service_name '%s' in config is invalid — falling back to 'vantage'", service_name
+        )
         service_name = "vantage"
     prefix = cfg.get("prefix", "!")
 
