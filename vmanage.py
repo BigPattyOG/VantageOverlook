@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """vmanage — vprod Bot CLI management tool.
 
-Manage any installed vprod bot instance from the command line.
+Manage the installed vprod bot from the command line.
 Uses only the Python standard library so it works without activating a venv.
 
 Usage
 -----
 ::
 
-    vmanage                          List all installed bot instances
-    vmanage BOTNAME                  Show status dashboard for BOTNAME
-    vmanage BOTNAME --start          Start the bot service
-    vmanage BOTNAME --stop           Stop the bot service
-    vmanage BOTNAME --restart        Restart the bot service
-    vmanage BOTNAME --status         Show full systemctl service status
-    vmanage BOTNAME --logs           Stream live logs  (Ctrl+C to stop)
-    vmanage BOTNAME --logs --lines 50  Show last 50 log lines (non-streaming)
-    vmanage BOTNAME --update         git pull + pip upgrade + restart
-    vmanage BOTNAME --repos          List cog repositories
-    vmanage BOTNAME --cogs           List installed cogs
-    vmanage BOTNAME --debug          Show verbose debug output
-    vmanage BOTNAME --yes            Skip confirmation prompts
+    vmanage                          Show status dashboard
+    vmanage --start                  Start the bot service
+    vmanage --stop                   Stop the bot service
+    vmanage --restart                Restart the bot service
+    vmanage --status                 Show full systemctl service status
+    vmanage --logs                   Stream live logs  (Ctrl+C to stop)
+    vmanage --logs --lines 50        Show last 50 log lines (non-streaming)
+    vmanage --update                 git pull + pip upgrade + restart
+    vmanage --repos                  List cog repositories
+    vmanage --cogs                   List installed cogs
+    vmanage --debug                  Show verbose debug output
+    vmanage --yes                    Skip confirmation prompts
 """
 
 from __future__ import annotations
@@ -39,7 +38,8 @@ from typing import Any, Dict, List, Optional
 
 # ── constants ──────────────────────────────────────────────────────────────────
 
-INSTALL_BASE = Path("/opt/vprod")
+INSTALL_DIR = Path("/opt/vprod")
+DATA_DIR = Path("/var/lib/vprod")
 BOT_USER = "vprodbot"
 VERSION = "2.0.0"
 
@@ -89,29 +89,27 @@ def print_banner(subtitle: str = "Bot Manager") -> None:
     print(f"\n  {bold('vmanage')} {dim('—')} {subtitle}\n")
 
 
-# ── bot discovery ──────────────────────────────────────────────────────────────
+# ── bot instance ───────────────────────────────────────────────────────────────
 
 class BotInstance:
-    """Represents one installed vprod bot under ``/opt/vprod/<Name>/``."""
+    """Represents the installed vprod bot at ``/opt/vprod/``."""
 
-    def __init__(self, install_dir: Path) -> None:
-        self.install_dir = install_dir
+    def __init__(self) -> None:
+        self.install_dir = INSTALL_DIR
         self.config: Dict[str, Any] = self._load_config()
-        self.name: str = self.config.get("name", install_dir.name)
-        self.service_name: str = self.config.get(
-            "service_name", f"vprod-{install_dir.name.lower()}"
-        )
+        self.name: str = self.config.get("name", "vprod")
+        self.service_name: str = "vprod"
         self.prefix: str = self.config.get("prefix", "!")
-        self.venv_python: Path = install_dir / "venv" / "bin" / "python"
-        self.venv_pip: Path = install_dir / "venv" / "bin" / "pip"
+        self.venv_python: Path = INSTALL_DIR / "venv" / "bin" / "python"
+        self.venv_pip: Path = INSTALL_DIR / "venv" / "bin" / "pip"
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _load_config(self) -> Dict[str, Any]:
-        # Production split layout: data lives in /var/lib/vprod/<Name>/
-        varlib_cfg = Path("/var/lib/vprod") / self.install_dir.name / "config.json"
+        # Production layout: data lives in /var/lib/vprod/
+        varlib_cfg = DATA_DIR / "config.json"
         # Dev layout: data/ next to the install dir
-        local_cfg = self.install_dir / "data" / "config.json"
+        local_cfg = INSTALL_DIR / "data" / "config.json"
 
         for cfg in (varlib_cfg, local_cfg):
             if cfg.exists():
@@ -128,7 +126,7 @@ class BotInstance:
     def has_token(self) -> bool:
         """Return True if DISCORD_TOKEN is set in the .env file or environment."""
         # Check .env file in install dir
-        env_file = self.install_dir / ".env"
+        env_file = INSTALL_DIR / ".env"
         if env_file.exists():
             try:
                 content = env_file.read_text(encoding="utf-8")
@@ -205,40 +203,14 @@ class BotInstance:
             return None
 
 
-def find_all_bots() -> List[BotInstance]:
-    """Return every vprod installation found under ``INSTALL_BASE``."""
-    bots: List[BotInstance] = []
-    if not INSTALL_BASE.exists():
-        return bots
-    for d in sorted(INSTALL_BASE.iterdir()):
-        varlib_cfg = Path("/var/lib/vprod") / d.name / "config.json"
-        local_cfg = d / "data" / "config.json"
-        if d.is_dir() and (varlib_cfg.exists() or local_cfg.exists()):
-            bots.append(BotInstance(d))
-    return bots
-
-
-def find_bot(name: str) -> BotInstance:
-    """Locate a bot by name (case-insensitive, supports prefix matching)."""
-    bots = find_all_bots()
-    nl = name.lower()
-
-    # Exact match on config name or directory name
-    for b in bots:
-        if b.name.lower() == nl or b.install_dir.name.lower() == nl:
-            return b
-
-    # Prefix match
-    for b in bots:
-        if b.name.lower().startswith(nl) or b.install_dir.name.lower().startswith(nl):
-            return b
-
-    avail = ", ".join(b.name for b in bots) or "(none)"
-    die(
-        f"No bot matching '{name}' found under {INSTALL_BASE}.\n"
-        f"  Available: {avail}\n"
-        f"  Run {bold('vmanage')} (no arguments) to list all bots."
-    )
+def get_bot() -> BotInstance:
+    """Return the single installed vprod bot instance."""
+    if not INSTALL_DIR.exists():
+        die(
+            f"Install directory {INSTALL_DIR} not found.\n"
+            f"  Deploy the bot with: sudo git clone <repo> {INSTALL_DIR}"
+        )
+    return BotInstance()
 
 # ── service control helpers ────────────────────────────────────────────────────
 
@@ -253,7 +225,7 @@ def _run_bot_cmd(bot: BotInstance, *cmd_parts: str) -> None:
     quoted_parts = " ".join(shlex.quote(str(p)) for p in cmd_parts)
     subprocess.run(
         ["sudo", "-u", BOT_USER, "bash", "-c",
-         f"cd {shlex.quote(str(bot.install_dir))} && {quoted_parts}"]
+         f"cd {shlex.quote(str(INSTALL_DIR))} && {quoted_parts}"]
     )
 
 
@@ -270,7 +242,7 @@ def do_start(bot: BotInstance, debug: bool = False) -> None:
         ok(f"{bold(bot.name)} is {teal(bold('running'))}.")
     else:
         warn(f"Service started but may not be active yet.\n"
-             f"  Check logs: vmanage {bot.install_dir.name} --logs")
+             f"  Check logs: vmanage --logs")
 
 
 def do_stop(bot: BotInstance, debug: bool = False) -> None:
@@ -293,7 +265,7 @@ def do_restart(bot: BotInstance, debug: bool = False) -> None:
         ok(f"{bold(bot.name)} restarted — {teal(bold('running'))}.")
     else:
         warn(f"Service restarted but may not be active yet.\n"
-             f"  Check logs: vmanage {bot.install_dir.name} --logs")
+             f"  Check logs: vmanage --logs")
 
 
 def do_status(bot: BotInstance, debug: bool = False) -> None:
@@ -375,7 +347,7 @@ def do_cogs(bot: BotInstance, debug: bool = False) -> None:
 # ── status dashboard ───────────────────────────────────────────────────────────
 
 def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
-    """Print a rich single-page status dashboard for the given bot."""
+    """Print a rich single-page status dashboard for the bot."""
     print_banner(f"{bold(bot.name)}  {dim('—')}  {str(bot.install_dir)}")
 
     SEP = dim("─" * 58)
@@ -400,6 +372,7 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
 
     print(f"  Service unit   : {dim(bot.service_name + '.service')}")
     print(f"  Install dir    : {dim(str(bot.install_dir))}")
+    print(f"  Data dir       : {dim(str(DATA_DIR))}")
 
     # Config
     if bot.config:
@@ -411,7 +384,7 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     else:
         print(
             f"  Config         : {red('missing')}  "
-            f"{dim('create config.json in the data directory')}"
+            f"{dim('create /var/lib/vprod/config.json')}"
         )
 
     # Python / venv
@@ -423,23 +396,22 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
 
     # Token
     if not bot.has_token():
-        print(f"  Token          : {red('NOT SET')}  {dim('— set DISCORD_TOKEN in .env')}")
+        print(f"  Token          : {red('NOT SET')}  {dim('— set DISCORD_TOKEN in /opt/vprod/.env')}")
 
     print(f"  {SEP}\n")
 
     # Quick reference
-    n = bot.install_dir.name
     print(f"  {bold('Commands:')}\n")
     pairs = [
-        ("Start",            f"vmanage {n} --start"),
-        ("Stop",             f"vmanage {n} --stop"),
-        ("Restart",          f"vmanage {n} --restart"),
-        ("Full status",      f"vmanage {n} --status"),
-        ("Stream logs",      f"vmanage {n} --logs"),
-        ("Last 50 lines",    f"vmanage {n} --logs --lines 50"),
-        ("Update & restart", f"vmanage {n} --update"),
-        ("List cogs",        f"vmanage {n} --cogs"),
-        ("List repos",       f"vmanage {n} --repos"),
+        ("Start",            "vmanage --start"),
+        ("Stop",             "vmanage --stop"),
+        ("Restart",          "vmanage --restart"),
+        ("Full status",      "vmanage --status"),
+        ("Stream logs",      "vmanage --logs"),
+        ("Last 50 lines",    "vmanage --logs --lines 50"),
+        ("Update & restart", "vmanage --update"),
+        ("List cogs",        "vmanage --cogs"),
+        ("List repos",       "vmanage --repos"),
     ]
     label_w = max(len(lb) for lb, _ in pairs)
     for label, cmd in pairs:
@@ -447,31 +419,9 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     print()
 
 
-# ── list all bots ──────────────────────────────────────────────────────────────
+# ── status dashboard (single bot) ─────────────────────────────────────────────
 
-def do_list() -> None:
-    """List every installed vprod bot instance."""
-    print_banner("Installed Bots")
-
-    bots = find_all_bots()
-    if not bots:
-        info("No bot instances found. Deploy manually — see README.md for setup steps.")
-        print()
-        return
-
-    print(f"  {bold(f'{len(bots)} bot instance(s)')}  {dim(str(INSTALL_BASE))}\n")
-    for bot in bots:
-        running = bot.is_running()
-        icon  = teal("●") if running else red("●")
-        state = teal(bold("running")) if running else red(bold("stopped"))
-        print(f"  {icon}  {bold(bot.name):<22} {state}")
-        print(f"       {dim('dir:')} {bot.install_dir}  {dim('svc:')} {bot.service_name}.service")
-        print(f"       {dim('pfx:')} {bot.prefix}"
-              + (f"  {dim('uptime:')} {bot.uptime()}" if running and bot.uptime() else ""))
-        print()
-
-    print(f"  {dim('Manage a bot:  ')} {bold('vmanage BOTNAME [--start|--stop|--restart|--logs|...]')}")
-    print()
+# do_dashboard is defined above
 
 
 # ── argument parser ────────────────────────────────────────────────────────────
@@ -479,28 +429,23 @@ def do_list() -> None:
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="vmanage",
-        description="vprod Bot CLI — manage any installed bot instance.",
+        description="vprod Bot CLI — manage the installed bot.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  vmanage                       List all installed bots
-  vmanage vprod                 Show status dashboard
-  vmanage vprod --start         Start the bot service
-  vmanage vprod --restart       Restart the bot service
-  vmanage vprod --logs          Stream live logs  (Ctrl+C to stop)
-  vmanage vprod --logs --lines 100   Show last 100 lines, non-streaming
-  vmanage vprod --update        Pull latest code and restart
-  vmanage vprod --update --yes  Same, skip confirmation
-  vmanage vprod --cogs          List installed cogs
-  vmanage vprod --repos         List cog repositories
-  vmanage vprod --debug         Show verbose debug information
+  vmanage                       Show status dashboard
+  vmanage --start               Start the bot service
+  vmanage --restart             Restart the bot service
+  vmanage --logs                Stream live logs  (Ctrl+C to stop)
+  vmanage --logs --lines 100    Show last 100 lines, non-streaming
+  vmanage --update              Pull latest code and restart
+  vmanage --update --yes        Same, skip confirmation
+  vmanage --cogs                List installed cogs
+  vmanage --repos               List cog repositories
+  vmanage --debug               Show verbose debug information
 """,
     )
 
-    p.add_argument(
-        "botname", nargs="?", metavar="BOTNAME",
-        help="Bot instance name (e.g. vprod).  Omit to list all installed bots.",
-    )
     p.add_argument("--version", action="version", version=f"vmanage {VERSION}")
 
     # ── action flags (mutually exclusive) ─────────────────────────────────────
@@ -537,21 +482,14 @@ def main() -> None:
 
     if args.debug:
         print(f"\n  {dim('vmanage')} {VERSION}  {dim('—')}  {dim('debug mode')}")
-        print(f"  {dim('INSTALL_BASE:')} {INSTALL_BASE}")
-        if args.botname:
-            print(f"  {dim('Looking for bot:')} {args.botname}")
+        print(f"  {dim('INSTALL_DIR:')} {INSTALL_DIR}")
+        print(f"  {dim('DATA_DIR:   ')} {DATA_DIR}")
         print()
 
-    # No botname → show all bots
-    if not args.botname:
-        do_list()
-        return
-
-    bot = find_bot(args.botname)
+    bot = get_bot()
 
     if args.debug:
-        print(f"  {dim('Resolved bot:')}  {bot.name}")
-        print(f"  {dim('Install dir:')}  {bot.install_dir}")
+        print(f"  {dim('Bot name:   ')}  {bot.name}")
         print(f"  {dim('Service:    ')}  {bot.service_name}")
         print(f"  {dim('Has venv:   ')}  {bot.has_venv()}")
         print(f"  {dim('Has token:  ')}  {bot.has_token()}")

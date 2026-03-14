@@ -7,7 +7,7 @@ variable (or from a ``.env`` file in the project root via python-dotenv).
 Data directory resolution order
 --------------------------------
 1. ``VPROD_DATA_DIR`` environment variable (explicit override).
-2. ``/var/lib/vprod/<name>/`` when the code lives under ``/opt/vprod/``.
+2. ``/var/lib/vprod/`` when the code lives under ``/opt/vprod/``.
 3. Local ``data/`` directory (development fallback).
 """
 
@@ -38,8 +38,8 @@ def resolve_data_dir() -> Path:
     Resolution order:
 
     1. ``VPROD_DATA_DIR`` environment variable — explicit override.
-    2. ``/var/lib/vprod/<name>/`` when this file is located under
-       ``/opt/vprod/<name>/`` (production layout).
+    2. ``/var/lib/vprod/`` when this file is located under
+       ``/opt/vprod/`` (production layout).
     3. ``data/`` relative to the project root (development fallback).
     """
     # 1 — explicit env var
@@ -47,15 +47,14 @@ def resolve_data_dir() -> Path:
     if env_dir:
         return Path(env_dir)
 
-    # 2 — production layout: code lives at /opt/vprod/<BotName>/...
+    # 2 — production layout: code lives at /opt/vprod/
     this_file = Path(__file__).resolve()
     try:
         opt_vprod = Path("/opt/vprod")
         parts = this_file.parts
         opt_parts = opt_vprod.parts
         if parts[: len(opt_parts)] == opt_parts and len(parts) > len(opt_parts):
-            bot_name = parts[len(opt_parts)]  # e.g. "vprod"
-            return Path("/var/lib/vprod") / bot_name
+            return Path("/var/lib/vprod")
     except Exception:
         pass
 

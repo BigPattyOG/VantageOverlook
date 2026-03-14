@@ -293,8 +293,8 @@ def cogs_autoload(cog_path: str) -> None:
 _BOT_USER = "vprodbot"
 _DEV_GROUP = "vprodadmins"
 _INSTALL_DIR = Path("/opt/vprod")
-_SERVICE_SRC = Path(__file__).resolve().parent / "vprod@.service"
-_SERVICE_DEST = Path("/etc/systemd/system/vprod@.service")
+_SERVICE_SRC = Path(__file__).resolve().parent / "vprod.service"
+_SERVICE_DEST = Path("/etc/systemd/system/vprod.service")
 
 
 @cli.group()
@@ -330,18 +330,13 @@ def system_status() -> None:
 
     # 4 — systemd service file
     svc_ok = _SERVICE_DEST.exists()
-    _status_line("systemd service template", svc_ok,
+    _status_line("systemd service file", svc_ok,
                  ok_detail=str(_SERVICE_DEST),
                  fail_detail=f"not installed — run: sudo python launcher.py system install-service")
 
     # 5 — service enabled/running
     if shutil.which("systemctl"):
-        from core.config import load_config as _lc
-        try:
-            _cfg = _lc()
-            _svc_name = f"vprod@{_cfg.get('name', 'vprod')}"
-        except Exception:
-            _svc_name = "vprod@vprod"
+        _svc_name = "vprod"
         enabled = subprocess.run(
             ["systemctl", "is-enabled", _svc_name], capture_output=True, text=True
         ).returncode == 0
@@ -384,7 +379,7 @@ def system_create_user(username: str, dev_group: str, home: str) -> None:
 
     Requires root (sudo).
 
-    The user is created as a system account running at /opt/vprod.
+    The user is created as a system account with home at /opt/vprod.
     The dev group allows authorised developers to manage the bot without root.
     Mutable data lives in /var/lib/vprod/.
 
@@ -446,26 +441,23 @@ def system_create_user(username: str, dev_group: str, home: str) -> None:
 @system.command("install-service")
 @click.option("--user", default=_BOT_USER, show_default=True,
               help="Linux user the service will run as.")
-@click.option("--bot-name", "bot_name", default=None,
-              help="Bot instance name (used for the service instance and data dir).")
-@click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
-              help="Base install directory (default: /opt/vprod). Bot code lives at <install-dir>/<BotName>/.")
-def system_install_service(user: str, bot_name: str | None, install_dir: str) -> None:
-    """Install (or update) the vprod@ template systemd service.
+def system_install_service(user: str) -> None:
+    """Install (or update) the vprod systemd service.
 
     Requires root (sudo).
 
-    Copies vprod@.service into /etc/systemd/system/, patches the User field,
-    then enables the instance for this bot so it starts automatically on boot.
+    Copies vprod.service into /etc/systemd/system/, patches the User field,
+    then enables it so the bot starts automatically on boot.
 
-    The service uses the split-path layout:
-      - Code:  /opt/vprod/<BotName>/
-      - Data:  /var/lib/vprod/<BotName>/   (via VPROD_DATA_DIR env var)
-      - Logs:  journald (view with journalctl -u vprod@<BotName>)
+    Layout:
+      - Code:  /opt/vprod/
+      - Data:  /var/lib/vprod/   (via VPROD_DATA_DIR env var)
+      - Token: /opt/vprod/.env   (DISCORD_TOKEN)
+      - Logs:  journald (journalctl -u vprod -f)
 
     Example:
-        sudo python launcher.py system install-service --bot-name vprod
-        sudo systemctl start vprod@vprod
+        sudo python launcher.py system install-service
+        sudo systemctl start vprod
     """
     if os.geteuid() != 0:
         click.echo(click.style("This command must be run as root.", fg="red"))
@@ -473,33 +465,21 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
         sys.exit(1)
 
     if not _SERVICE_SRC.exists():
-        click.echo(click.style(f"Service template not found: {_SERVICE_SRC}", fg="red"))
+        click.echo(click.style(f"Service file not found: {_SERVICE_SRC}", fg="red"))
         sys.exit(1)
 
-    install_path = Path(install_dir)
-
-    # Determine bot name for the instance
-    if not bot_name:
-        try:
-            from core.config import load_config as _lc
-            bot_name = _lc().get("name", install_path.name)
-        except Exception:
-            bot_name = install_path.name
-
-    data_dir = Path("/var/lib/vprod") / bot_name
-    working_dir = install_path / bot_name
-    venv_python = working_dir / "venv" / "bin" / "python"
-    instance_svc = f"vprod@{bot_name}"
+    venv_python = _INSTALL_DIR / "venv" / "bin" / "python"
+    data_dir = Path("/var/lib/vprod")
 
     click.echo(click.style("\nInstalling systemd service...\n", bold=True))
-    click.echo(f"   Template file : {_SERVICE_DEST}")
-    click.echo(f"   Instance      : {instance_svc}")
+    click.echo(f"   Service file  : {_SERVICE_DEST}")
+    click.echo(f"   Service name  : vprod")
     click.echo(f"   Run as user   : {user}")
-    click.echo(f"   Working dir   : {working_dir}")
+    click.echo(f"   Working dir   : {_INSTALL_DIR}")
     click.echo(f"   Data dir      : {data_dir}")
     click.echo(f"   Python        : {venv_python}\n")
 
-    # Read the template and patch the User= field.
+    # Read the service file and patch the User= field.
     content = _SERVICE_SRC.read_text(encoding="utf-8")
     patched_lines = []
     for line in content.splitlines():
@@ -510,17 +490,17 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
 
     _SERVICE_DEST.write_text("\n".join(patched_lines) + "\n", encoding="utf-8")
 
-    # Create the data directory if it doesn't exist
+    # Ensure the data directory exists
     data_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         subprocess.run(["systemctl", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "enable", instance_svc], check=True)
-        click.echo(click.style(f"Service {instance_svc} installed and enabled.", fg="green"))
+        subprocess.run(["systemctl", "enable", "vprod"], check=True)
+        click.echo(click.style("Service 'vprod' installed and enabled.", fg="green"))
         click.echo("\nStart the bot now with:")
-        click.echo("  " + click.style(f"sudo systemctl start {instance_svc}", bold=True))
+        click.echo("  " + click.style("sudo systemctl start vprod", bold=True))
         click.echo("Watch the logs:")
-        click.echo("  " + click.style(f"sudo journalctl -u {instance_svc} -f", bold=True))
+        click.echo("  " + click.style("sudo journalctl -u vprod -f", bold=True))
     except FileNotFoundError:
         click.echo(click.style("systemctl not found — are you on a systemd system?", fg="yellow"))
     except subprocess.CalledProcessError as exc:
@@ -561,8 +541,7 @@ def _print_user_info(username: str) -> None:
     except KeyError:
         pass
     click.echo("Next steps:")
-    click.echo(f"  Switch to the user  : " + click.style(f"sudo -u {username} bash", bold=True))
-    click.echo(f"  Deploy the bot code : " + click.style(f"sudo git clone <repo> /opt/vprod/vprod", bold=True))
+    click.echo(f"  Deploy the bot code : " + click.style(f"sudo git clone <repo> /opt/vprod", bold=True))
 
 
 def _status_line(label: str, ok: bool, ok_detail: str = "", fail_detail: str = "") -> None:

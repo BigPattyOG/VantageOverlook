@@ -2,7 +2,7 @@
 
 This guide is written for **you**, the person who owns the bot. No jargon. If something breaks, start here.
 
-For the full first-time setup walkthrough (Discord portal, server setup, adding devs), see **[SETUP.md](SETUP.md)**.
+For the full first-time setup walkthrough (Discord portal, server setup, adding devs, permissions), see **[SETUP.md](SETUP.md)**.
 
 ---
 
@@ -10,7 +10,7 @@ For the full first-time setup walkthrough (Discord portal, server setup, adding 
 
 vprod is your personal Discord bot. It lives on a Linux server, runs 24/7, and you control it either by:
 
-1. **Typing commands in a terminal** on the server (`vmanage vprod --restart`)
+1. **Typing commands in a terminal** on the server (`vmanage --restart`)
 2. **Typing commands in Discord** (`!vmanage`, `!stats`, etc.)
 
 The bot is "modular" — the core is tiny, but you can add extra features (called **cogs**) from GitHub or your own files.
@@ -24,25 +24,22 @@ The bot is "modular" — the core is tiny, but you can add extra features (calle
 After the bot is installed, you have a command called `vmanage` on your server.
 
 ```bash
-# See all your bots and their status
+# See the bot's status
 vmanage
 
-# See detailed info about a specific bot
-vmanage vprod
-
 # Start / stop / restart the bot
-vmanage vprod --start
-vmanage vprod --stop
-vmanage vprod --restart
+vmanage --start
+vmanage --stop
+vmanage --restart
 
 # Watch the bot's live output (Ctrl+C to stop)
-vmanage vprod --logs
+vmanage --logs
 
 # See the last 50 lines of logs without streaming
-vmanage vprod --logs --lines 50
+vmanage --logs --lines 50
 
 # Pull updates from GitHub and restart the bot
-vmanage vprod --update
+vmanage --update
 ```
 
 That's it. You don't need to remember any systemd commands.
@@ -60,13 +57,12 @@ Type these in any server channel the bot can see. Replace `!` with your prefix i
 
 **These only work for you (the owner):**
 - `!vmanage` — opens a management panel right in Discord with buttons to Restart, Stop, Update, and see Logs
-- `!vmanage vprod` — same, but filters to a specific bot (useful if you have multiple)
 - `!stats` — shows how many servers the bot is in, user counts, latency, uptime
 - `!servers` — lists every server the bot is in
 - `!announce Hello everyone!` — sends that message to every server's system channel
 - `!setactivity playing chess` — changes what the bot shows as its status
 - `!prefix >` — changes the command prefix from `!` to `>`
-- `!shutdown` — turns the bot off (it won't come back on until you restart it with `vmanage vprod --start`)
+- `!shutdown` — turns the bot off (it won't come back on until you restart it with `vmanage --start`)
 - `!load my_cogs.greet` — turns on an extra cog (plugin)
 - `!reload my_cogs.greet` — reloads a cog to pick up code changes without restarting
 - `!unload my_cogs.greet` — turns off a cog
@@ -75,7 +71,7 @@ Type these in any server channel the bot can see. Replace `!` with your prefix i
 
 ### 3. Configuration — where your settings live
 
-**`/var/lib/vprod/config.json`** — bot settings (prefix, name, etc.):
+**`/var/lib/vprod/config.json`** (permissions `660`) — bot settings (prefix, name, etc.):
 
 ```json
 {
@@ -87,7 +83,7 @@ Type these in any server channel the bot can see. Replace `!` with your prefix i
 }
 ```
 
-**`/opt/vprod/.env`** — your bot token (never share this file, permissions: `600`):
+**`/opt/vprod/.env`** (permissions `600`) — your bot token (never share this file):
 
 ```
 DISCORD_TOKEN=your-secret-token-here
@@ -95,11 +91,11 @@ DISCORD_TOKEN=your-secret-token-here
 
 The token is stored separately in `.env` and never written to `config.json`. Lock it down:
 ```bash
-sudo chmod 600 /opt/vprod/vprod/.env
-sudo chown vprodbot:vprodbot /opt/vprod/vprod/.env
+sudo chmod 600 /opt/vprod/.env
+sudo chown vprodbot:vprodbot /opt/vprod/.env
 ```
 
-To update your token, edit `/opt/vprod/vprod/.env` directly and restart the bot.
+To update your token, edit `/opt/vprod/.env` directly and restart the bot.
 
 ---
 
@@ -131,19 +127,24 @@ getent group vprodadmins
 sudo gpasswd -d <linux_username> vprodadmins
 ```
 
+| What it controls | How to manage |
+|-----------------|--------------|
+| Who can run owner bot commands in Discord | Discord Team at discord.com/developers/teams |
+| Who can read/edit bot files on the server | `vprodadmins` Linux group via `usermod` |
+
 ---
 
 ## Day-to-day management
 
 ### Bot crashed or acting weird?
 ```bash
-vmanage vprod --restart
-vmanage vprod --logs       # see what went wrong
+vmanage --restart
+vmanage --logs       # see what went wrong
 ```
 
 ### Update the bot to the latest version?
 ```bash
-vmanage vprod --update
+vmanage --update
 ```
 This pulls the latest code from GitHub, upgrades packages, and restarts automatically.
 
@@ -151,21 +152,21 @@ This pulls the latest code from GitHub, upgrades packages, and restarts automati
 
 Check if it's running:
 ```bash
-vmanage vprod
+vmanage
 ```
 
 If it says "stopped", start it:
 ```bash
-vmanage vprod --start
+vmanage --start
 ```
 
 If it starts but immediately stops, read the logs:
 ```bash
-vmanage vprod --logs --lines 50
+vmanage --logs --lines 50
 ```
 
 Common causes:
-- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, update `/opt/vprod/vprod/.env`, and restart the bot.
+- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, update `/opt/vprod/.env`, and restart the bot.
 - **Missing intents** — go to the developer portal, find your bot, enable "Message Content Intent" and "Server Members Intent"
 - **Python error** — check the logs for a traceback
 
@@ -179,7 +180,7 @@ Cogs are plugins that add commands and features to your bot.
 
 ```bash
 # From your bot's install directory
-cd /opt/vprod/vprod
+cd /opt/vprod
 
 # Add the repo (replace with actual URL)
 sudo -u vprodbot ./venv/bin/python launcher.py repos add https://github.com/someone/cool-cogs
@@ -196,8 +197,8 @@ sudo -u vprodbot ./venv/bin/python launcher.py cogs autoload cool_cogs.some_feat
 
 ### Seeing what cogs are loaded
 ```bash
-vmanage vprod --cogs      # from terminal
-!cogs                     # from Discord
+vmanage --cogs      # from terminal
+!cogs               # from Discord
 ```
 
 ---
@@ -206,14 +207,14 @@ vmanage vprod --cogs      # from terminal
 
 | What | Where |
 |------|-------|
-| Bot code | `/opt/vprod/vprod/` |
-| Bot token | `/opt/vprod/vprod/.env` |
-| Config (prefix, name, etc.) | `/var/lib/vprod/vprod/config.json` |
-| Cog registry | `/var/lib/vprod/vprod/cog_data.json` |
-| Downloaded cog repos | `/var/lib/vprod/vprod/repos/` |
-| Per-server data | `/var/lib/vprod/vprod/guilds/` |
-| Log viewer | `vmanage vprod --logs` or `journalctl -u vprod@vprod` |
-| Python install | `/opt/vprod/vprod/venv/` |
+| Bot code | `/opt/vprod/` |
+| Bot token | `/opt/vprod/.env` (permissions: `600`) |
+| Config (prefix, name, etc.) | `/var/lib/vprod/config.json` (permissions: `660`) |
+| Cog registry | `/var/lib/vprod/cog_data.json` |
+| Downloaded cog repos | `/var/lib/vprod/repos/` |
+| Per-server data | `/var/lib/vprod/guilds/` |
+| Log viewer | `vmanage --logs` or `journalctl -u vprod` |
+| Python install | `/opt/vprod/venv/` |
 
 ---
 
@@ -221,9 +222,9 @@ vmanage vprod --cogs      # from terminal
 
 | Symptom | First thing to try |
 |---------|--------------------|
-| Bot offline | `vmanage vprod --start` |
-| Bot starts then crashes | `vmanage vprod --logs --lines 50` |
+| Bot offline | `vmanage --start` |
+| Bot starts then crashes | `vmanage --logs --lines 50` |
 | Commands not working | Check prefix with `!ping` or `@vprod ping` |
 | "Not owner" error | Check Discord application team membership |
-| Token invalid | Update DISCORD_TOKEN in `/opt/vprod/vprod/.env` and restart |
-| Want new features | `vmanage vprod --update` |
+| Token invalid | Update DISCORD_TOKEN in `/opt/vprod/.env` and restart |
+| Want new features | `vmanage --update` |
