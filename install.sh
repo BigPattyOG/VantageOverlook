@@ -344,12 +344,14 @@ PYEOF
     AUTO_OWNER_NAMES=""
 
     if [[ -n "$DISCORD_API_RESPONSE" ]] && ! echo "$DISCORD_API_RESPONSE" | grep -q '"code"'; then
-        # Parse owner/team with Python — API response is passed via stdin to avoid
-        # embedding untrusted JSON in the script source.
-        PARSED=$(echo "$DISCORD_API_RESPONSE" | "$PYTHON_BIN" - <<'PYEOF'
-import json, sys
+        # Parse owner/team with Python — the JSON is passed via an environment
+        # variable so that the pipe does not conflict with the here-doc that
+        # provides the Python script on stdin (pipe + here-doc: here-doc wins,
+        # leaving sys.stdin empty and json.load(sys.stdin) always failing).
+        PARSED=$(DISCORD_API_RESPONSE="$DISCORD_API_RESPONSE" "$PYTHON_BIN" - <<'PYEOF'
+import json, os
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(os.environ["DISCORD_API_RESPONSE"])
     team = d.get("team")
     if team:
         members = [
@@ -359,7 +361,7 @@ try:
         ids   = ",".join(m["id"] for m in members)
         names = ", ".join(f"{m.get('username','?')} ({m['id']})" for m in members)
     else:
-        owner = d.get("owner", {})
+        owner = d.get("owner") or {}
         ids   = owner.get("id", "")
         names = f"{owner.get('username','?')} ({owner.get('id','?')})"
     print(ids)

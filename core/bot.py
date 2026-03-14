@@ -12,8 +12,7 @@ from __future__ import annotations
 import logging
 import traceback
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import discord
 from discord.ext import commands
@@ -50,6 +49,9 @@ class VantageBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Called once before the bot connects. Load extensions here."""
+        # Fetch owner(s) from the Discord API and merge with config owner_ids.
+        await self._sync_owner_ids()
+
         # Make all repos importable
         self.cog_manager.setup_paths()
 
@@ -147,6 +149,51 @@ class VantageBot(commands.Bot):
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────
+
+    async def _sync_owner_ids(self) -> None:
+        """Fetch the application's owner(s) from Discord and update ``owner_ids``.
+
+        Supports both single-owner and team-owned applications.  Any IDs
+        already present in the config are preserved so that the server
+        operator can add extra owners beyond the application owner.
+        """
+        try:
+            app_info = await self.application_info()
+            discord_owner_ids: set[int] = set()
+
+            if app_info.team:
+                # Team-owned application — only accepted members (membership_state == 2)
+                # count as owners, matching the installer's behaviour.
+                discord_owner_ids = {
+                    m.id
+                    for m in app_info.team.members
+                    if m.membership_state == discord.TeamMembershipState.accepted
+                }
+                log.info(
+                    "Fetched %d team owner(s) from Discord: %s",
+                    len(discord_owner_ids),
+                    discord_owner_ids,
+                )
+            elif app_info.owner:
+                discord_owner_ids = {app_info.owner.id}
+                log.info(
+                    "Fetched bot owner from Discord: %s (ID: %d)",
+                    app_info.owner,
+                    app_info.owner.id,
+                )
+            else:
+                log.warning("Discord application info returned no owner and no team.")
+
+            # Merge Discord owners with any extra IDs already in owner_ids
+            # (config can list additional owners beyond the app owner).
+            self.owner_ids = discord_owner_ids | self.owner_ids
+        except Exception:
+            log.warning(
+                "Could not fetch application info from Discord; "
+                "falling back to config owner_ids: %s",
+                self.owner_ids,
+                exc_info=True,
+            )
 
     async def _send_error(self, ctx: commands.Context, title: str, desc: str) -> None:
         embed = discord.Embed(title=f"❌ {title}", description=desc, color=discord.Color.red())
