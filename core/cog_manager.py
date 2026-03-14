@@ -4,16 +4,20 @@ The manager is used by both the CLI (offline) and the running bot (runtime).
 
 Directory layout
 ----------------
-``data/repos/``         — root for all repos (added to sys.path at startup).
-``data/repos/<name>/``  — GitHub repos cloned here.
-``data/repos/<name>``   — Local repos symlinked here (symlink → local path).
-``data/cog_data.json``  — Persisted repo / cog registry.
+``<data_dir>/repos/``         — root for all repos (added to sys.path at startup).
+``<data_dir>/repos/<name>/``  — GitHub repos cloned here.
+``<data_dir>/repos/<name>``   — Local repos symlinked here (symlink → local path).
+``<data_dir>/cog_data.json``  — Persisted repo / cog registry.
+
+The data directory is resolved via :func:`core.config.resolve_data_dir` (checks
+``VANTAGE_DATA_DIR`` env var, then ``/var/lib/vantage/<BotName>``, then local
+``data/`` fallback).
 
 Cog module paths
 ----------------
 A cog is referenced by ``<repo_name>.<cog_name>`` (e.g. ``my_cogs.welcome``).
-Since ``data/repos/`` is on sys.path, ``import my_cogs.welcome`` resolves to
-``data/repos/my_cogs/welcome.py`` (or ``data/repos/my_cogs/welcome/__init__.py``).
+Since ``<data_dir>/repos/`` is on sys.path, ``import my_cogs.welcome`` resolves
+to ``<data_dir>/repos/my_cogs/welcome.py`` (or ``__init__.py``).
 """
 
 from __future__ import annotations
@@ -24,7 +28,9 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-DATA_DIR = Path("data")
+from .config import resolve_data_dir
+
+DATA_DIR = resolve_data_dir()
 REPOS_DIR = DATA_DIR / "repos"
 COG_DATA_FILE = DATA_DIR / "cog_data.json"
 

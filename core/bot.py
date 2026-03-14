@@ -196,5 +196,5 @@ class VantageBot(commands.Bot):
             )
 
     async def _send_error(self, ctx: commands.Context, title: str, desc: str) -> None:
-        embed = discord.Embed(title=f"❌ {title}", description=desc, color=discord.Color.red())
+        embed = discord.Embed(title=title, description=desc, color=discord.Color.red())
         await ctx.send(embed=embed)

@@ -63,7 +63,7 @@ class VManageView(discord.ui.View):
         if interaction.user.id not in owner_ids:
             await interaction.response.send_message(
                 embed=discord.Embed(
-                    description="❌ Only bot owners can use these controls.",
+                    description="Only bot owners can use these controls.",
                     color=RED,
                 ),
                 ephemeral=True,
@@ -84,7 +84,7 @@ class VManageView(discord.ui.View):
 
     # ── buttons ───────────────────────────────────────────────────────────────
 
-    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary, emoji="🔄", row=0)
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.primary, row=0)
     async def restart_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._check_owner(interaction):
             return
@@ -92,11 +92,11 @@ class VManageView(discord.ui.View):
             svc = self._service_name()
         except ValueError as exc:
             await interaction.response.send_message(
-                embed=discord.Embed(description=f"❌ {exc}", color=RED), ephemeral=True
+                embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
         await interaction.response.send_message(
-            embed=discord.Embed(description="🔄 Restarting bot service…", color=BLURPLE),
+            embed=discord.Embed(description="Restarting bot service...", color=BLURPLE),
             ephemeral=True,
         )
         subprocess.Popen(  # noqa: S603
@@ -105,7 +105,7 @@ class VManageView(discord.ui.View):
             stderr=subprocess.DEVNULL,
         )
 
-    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⛔", row=0)
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, row=0)
     async def stop_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._check_owner(interaction):
             return
@@ -113,11 +113,11 @@ class VManageView(discord.ui.View):
             svc = self._service_name()
         except ValueError as exc:
             await interaction.response.send_message(
-                embed=discord.Embed(description=f"❌ {exc}", color=RED), ephemeral=True
+                embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
         await interaction.response.send_message(
-            embed=discord.Embed(description="⛔ Stopping bot service…", color=RED),
+            embed=discord.Embed(description="Stopping bot service...", color=RED),
             ephemeral=True,
         )
         subprocess.Popen(  # noqa: S603
@@ -126,7 +126,7 @@ class VManageView(discord.ui.View):
             stderr=subprocess.DEVNULL,
         )
 
-    @discord.ui.button(label="Update", style=discord.ButtonStyle.secondary, emoji="⬆️", row=0)
+    @discord.ui.button(label="Update", style=discord.ButtonStyle.secondary, row=0)
     async def update_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._check_owner(interaction):
             return
@@ -134,12 +134,12 @@ class VManageView(discord.ui.View):
             svc = self._service_name()
         except ValueError as exc:
             await interaction.response.send_message(
-                embed=discord.Embed(description=f"❌ {exc}", color=RED), ephemeral=True
+                embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
         await interaction.response.send_message(
             embed=discord.Embed(
-                description="⬆️ Pulling latest code and upgrading dependencies…\nThe bot will restart automatically.",
+                description="Pulling latest code and upgrading dependencies...\nThe bot will restart automatically.",
                 color=GOLD,
             ),
             ephemeral=True,
@@ -179,7 +179,7 @@ class VManageView(discord.ui.View):
             stderr=subprocess.DEVNULL,
         )
 
-    @discord.ui.button(label="Logs", style=discord.ButtonStyle.secondary, emoji="📋", row=1)
+    @discord.ui.button(label="Logs", style=discord.ButtonStyle.secondary, row=1)
     async def logs_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._check_owner(interaction):
             return
@@ -187,7 +187,7 @@ class VManageView(discord.ui.View):
             svc = self._service_name()
         except ValueError as exc:
             await interaction.response.send_message(
-                embed=discord.Embed(description=f"❌ {exc}", color=RED), ephemeral=True
+                embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
         result = subprocess.run(
@@ -198,13 +198,13 @@ class VManageView(discord.ui.View):
         if len(log_text) > 3900:
             log_text = "…" + log_text[-3900:]
         embed = discord.Embed(
-            title=f"📋 Last 25 log lines — {svc}",
+            title=f"Last 25 log lines — {svc}",
             description=f"```\n{log_text}\n```",
             color=BLURPLE,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="Refresh Panel", style=discord.ButtonStyle.secondary, emoji="🔁", row=1)
+    @discord.ui.button(label="Refresh Panel", style=discord.ButtonStyle.secondary, row=1)
     async def refresh_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         if not await self._check_owner(interaction):
             return
@@ -262,14 +262,14 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     py_ver = platform.python_version()
 
     embed = discord.Embed(
-        title=f"⚙️  {bot_name} — Management Panel",
+        title=f"{bot_name} — Management Panel",
         color=EMBED_COLOUR,
     )
     if bot.user:
         embed.set_thumbnail(url=bot.user.display_avatar.url)
 
     embed.add_field(
-        name="🤖  Bot",
+        name="Bot",
         value=(
             f"**Name:** {bot.user} \n"
             f"**ID:** `{bot.user.id}`\n"
@@ -278,7 +278,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="📊  Stats",
+        name="Stats",
         value=(
             f"**Guilds:** {guild_count}\n"
             f"**Users:** {user_count:,}\n"
@@ -287,12 +287,12 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="⏱️  Uptime",
+        name="Uptime",
         value=uptime_str,
         inline=True,
     )
     embed.add_field(
-        name="🔧  Service",
+        name="Service",
         value=(
             f"**Status:** {svc_status}\n"
             f"**Unit:** `{service_name}.service`"
@@ -300,7 +300,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="🐍  Runtime",
+        name="Runtime",
         value=(
             f"**Python:** {py_ver}\n"
             f"**discord.py:** {dpy_ver}"
@@ -308,7 +308,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="🧩  Cogs",
+        name="Cogs",
         value=f"{len(bot.extensions)} loaded",
         inline=True,
     )
@@ -328,10 +328,10 @@ class Admin(commands.Cog, name="Admin"):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _ok(self, description: str) -> discord.Embed:
-        return discord.Embed(description=f"✅ {description}", color=GREEN)
+        return discord.Embed(description=description, color=GREEN)
 
     def _err(self, description: str) -> discord.Embed:
-        return discord.Embed(description=f"❌ {description}", color=RED)
+        return discord.Embed(description=description, color=RED)
 
     def _info(self, title: str, description: str = "") -> discord.Embed:
         return discord.Embed(title=title, description=description, color=EMBED_COLOUR)
@@ -342,7 +342,7 @@ class Admin(commands.Cog, name="Admin"):
     async def ping(self, ctx: commands.Context) -> None:
         """Check the bot's response time."""
         latency_ms = round(self.bot.latency * 1000)
-        await ctx.send(embed=self._info("🏓 Pong!", f"API latency: **{latency_ms} ms**"))
+        await ctx.send(embed=self._info("Pong!", f"API latency: **{latency_ms} ms**"))
 
     @commands.command()
     @commands.is_owner()
@@ -410,7 +410,7 @@ class Admin(commands.Cog, name="Admin"):
         """
         loaded = sorted(self.bot.extensions.keys())
         embed = self._info(
-            f"🧩 Loaded Extensions ({len(loaded)})",
+            f"Loaded Extensions ({len(loaded)})",
             "\n".join(f"`{e}`" for e in loaded) if loaded else "None",
         )
         await ctx.send(embed=embed)
@@ -424,7 +424,7 @@ class Admin(commands.Cog, name="Admin"):
         """
         if new_prefix is None:
             current = ctx.clean_prefix
-            await ctx.send(embed=self._info("⚙️ Prefix", f"Current prefix: `{current}`"))
+            await ctx.send(embed=self._info("Prefix", f"Current prefix: `{current}`"))
             return
 
         self.bot.config["prefix"] = new_prefix
@@ -443,7 +443,7 @@ class Admin(commands.Cog, name="Admin"):
 
         **Owner only.**
         """
-        await ctx.send(embed=self._ok("Shutting down… 👋"))
+        await ctx.send(embed=self._ok("Shutting down..."))
         log.info("Shutdown requested by %s", ctx.author)
         await self.bot.close()
 
@@ -505,7 +505,7 @@ class Admin(commands.Cog, name="Admin"):
         total = len(guilds)
         for i, content in enumerate(pages, 1):
             embed = discord.Embed(
-                title=f"🌐 Guilds ({total}) — page {i}/{len(pages)}",
+                title=f"Guilds ({total}) — page {i}/{len(pages)}",
                 description=content or "None",
                 color=EMBED_COLOUR,
             )
@@ -537,7 +537,7 @@ class Admin(commands.Cog, name="Admin"):
             uptime_str = f"{h}h {m}m {s}s"
 
         embed = discord.Embed(
-            title=f"📊 {bot_name} Statistics",
+            title=f"{bot_name} — Statistics",
             color=EMBED_COLOUR,
             timestamp=datetime.now(timezone.utc),
         )
@@ -545,7 +545,7 @@ class Admin(commands.Cog, name="Admin"):
             embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
         embed.add_field(
-            name="🌐 Reach",
+            name="Reach",
             value=(
                 f"**Guilds:** {guild_count:,}\n"
                 f"**Users:** {user_count:,}\n"
@@ -555,7 +555,7 @@ class Admin(commands.Cog, name="Admin"):
             inline=True,
         )
         embed.add_field(
-            name="🤖 Bot",
+            name="Bot",
             value=(
                 f"**Latency:** {latency_ms} ms\n"
                 f"**Uptime:** {uptime_str}\n"
@@ -565,7 +565,7 @@ class Admin(commands.Cog, name="Admin"):
             inline=True,
         )
         embed.add_field(
-            name="🐍 Runtime",
+            name="Runtime",
             value=(
                 f"**Python:** {platform.python_version()}\n"
                 f"**discord.py:** {discord.__version__}\n"
@@ -593,7 +593,7 @@ class Admin(commands.Cog, name="Admin"):
         skipped = 0
 
         embed = discord.Embed(
-            title="📢 Announcement",
+            title="Announcement",
             description=message,
             color=GOLD,
             timestamp=datetime.now(timezone.utc),
@@ -688,7 +688,7 @@ class Admin(commands.Cog, name="Admin"):
         description = cfg.get("description", "")
 
         embed = discord.Embed(
-            title=f"ℹ️ About {bot_name}",
+            title=f"About {bot_name}",
             description=description,
             color=EMBED_COLOUR,
         )
