@@ -114,8 +114,18 @@ def setup() -> None:
 
     config = load_config()
 
-    # Step 1 — token
-    click.echo("Step 1: Bot Token")
+    # Step 1 — bot name
+    click.echo("Step 1: Bot Name")
+    click.echo("  This name identifies the bot instance (shown in vmanage, used for the service).\n")
+    name = click.prompt(
+        "  Bot name",
+        default=config.get("name", "Vantage"),
+        prompt_suffix=" > ",
+    )
+    config["name"] = name.strip()
+
+    # Step 2 — token
+    click.echo("\nStep 2: Bot Token")
     click.echo("  Get your token from https://discord.com/developers/applications\n")
     token = click.prompt(
         "  Bot token",
@@ -126,8 +136,8 @@ def setup() -> None:
     )
     config["token"] = token.strip()
 
-    # Step 2 — prefix
-    click.echo("\nStep 2: Command Prefix")
+    # Step 3 — prefix
+    click.echo("\nStep 3: Command Prefix")
     prefix = click.prompt(
         "  Command prefix",
         default=config.get("prefix", "!"),
@@ -135,8 +145,8 @@ def setup() -> None:
     )
     config["prefix"] = prefix
 
-    # Step 3 — owner IDs
-    click.echo("\nStep 3: Bot Owner(s)")
+    # Step 4 — owner IDs
+    click.echo("\nStep 4: Bot Owner(s)")
     click.echo("  Enable Developer Mode in Discord → right-click your name → Copy ID.")
     existing = ", ".join(str(i) for i in config.get("owner_ids", []))
     raw = click.prompt(
@@ -146,8 +156,8 @@ def setup() -> None:
     )
     config["owner_ids"] = [int(i.strip()) for i in raw.split(",") if i.strip().isdigit()]
 
-    # Step 4 — description
-    click.echo("\nStep 4: Bot Description")
+    # Step 5 — description
+    click.echo("\nStep 5: Bot Description")
     desc = click.prompt(
         "  Description",
         default=config.get("description", "Vantage — a custom Discord bot framework"),
