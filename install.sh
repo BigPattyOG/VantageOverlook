@@ -101,20 +101,33 @@ step "Step 1/6 — System packages"
 # has apt_pkg so that apt-get update does not fail with
 # "ModuleNotFoundError: No module named 'apt_pkg'".
 if ! python3 -c "import apt_pkg" 2>/dev/null; then
-    for _syspy in $(ls /usr/bin/python3.[0-9]* 2>/dev/null | sort -V); do
-        if [[ -x "$_syspy" ]] && "$_syspy" -c "import apt_pkg" 2>/dev/null; then
+    # Only iterate over actual Python interpreter binaries (not python3-config,
+    # python3-venv, etc.) by filtering to names that are exactly python3.N or
+    # python3.NN — no trailing text after the version number.
+    for _syspy in $(find /usr/bin -maxdepth 1 -name 'python3.*' -executable 2>/dev/null \
+                    | grep -E '/python3\.[0-9]+$' | sort -V); do
+        if "$_syspy" -c "import apt_pkg" 2>/dev/null; then
             warn "python3 → apt_pkg broken; temporarily resetting python3 alternative to ${_syspy}."
+            # Register the alternative first (required when it was never registered),
+            # then set it — both silently ignored if already at this version.
+            update-alternatives --install /usr/bin/python3 python3 "$_syspy" 999 2>/dev/null || true
             update-alternatives --set python3 "$_syspy" 2>/dev/null || true
             break
         fi
     done
-    # If no system Python with apt_pkg was found, disable the failing hook for
-    # this session so apt-get update can still succeed.
+    # If no system Python with apt_pkg was found, or update-alternatives did not
+    # take effect, suppress the failing cnf-update-db hook by temporarily moving
+    # its config file.  The broken APT list-override syntax used previously
+    # (APT::Update::Post-Invoke-Success "") does NOT clear hooks added with "::",
+    # so apt-get update still exited non-zero.  Moving the file is reliable.
     if ! python3 -c "import apt_pkg" 2>/dev/null; then
         warn "Could not find a python3 with apt_pkg; suppressing command-not-found APT hook."
-        printf 'APT::Update::Post-Invoke-Success "";\n' \
-            > /etc/apt/apt.conf.d/99vantage-disable-cnf-hook
-        trap 'rm -f /etc/apt/apt.conf.d/99vantage-disable-cnf-hook' EXIT
+        _CNF_HOOK="/etc/apt/apt.conf.d/50command-not-found"
+        if [[ -f "$_CNF_HOOK" ]]; then
+            _CNF_HOOK_BAK=$(mktemp /tmp/50command-not-found.XXXXXX)
+            mv "$_CNF_HOOK" "$_CNF_HOOK_BAK"
+            trap 'mv "$_CNF_HOOK_BAK" /etc/apt/apt.conf.d/50command-not-found 2>/dev/null || true' EXIT
+        fi
     fi
 fi
 
@@ -146,6 +159,14 @@ if [[ -n "$SYSTEM_PY3" && -x "$SYSTEM_PY3" && \
 fi
 update-alternatives --install /usr/bin/python3 python3 \
     "/usr/bin/python${PYTHON_VERSION}" 10 2>/dev/null || true
+
+# Reinstall python3-apt so that the apt_pkg C extension is rebuilt/relinked for
+# whichever python3 alternative is now active.  Without this, the cnf-update-db
+# hook used by subsequent apt-get update invocations can still fail with
+# "No module named 'apt_pkg'" if the active python3 changed version.
+if ! apt-get install --reinstall -y -qq python3-apt 2>/dev/null; then
+    warn "python3-apt reinstall failed — apt_pkg may still be unavailable for the active python3."
+fi
 
 PYTHON_BIN="python${PYTHON_VERSION}"
 info "Python version: $($PYTHON_BIN --version 2>&1)"
