@@ -16,7 +16,15 @@ A custom Discord bot framework built with [discord.py](https://discordpy.readthe
 
 ## Quick Start (Ubuntu Server)
 
-### 1. One-shot install
+### One-liner install
+
+Run this single command on your Ubuntu 22.04+ server and the installer will handle everything — including prompting you for your bot token:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh | sudo bash
+```
+
+Or clone and run manually:
 
 ```bash
 git clone https://github.com/BigPattyOG/VantageOverlook.git
@@ -29,34 +37,54 @@ sudo ./install.sh
 
 | Step | What happens |
 |------|-------------|
-| 1 | Installs Python 3.11, pip, venv, and git via `apt` |
+| 1 | Installs Python 3.13 (via deadsnakes PPA), pip, venv, git, and build tools |
 | 2 | **Creates a dedicated `vantage` Linux system user** at `/opt/vantage` |
 | 3 | Clones the repository to `/opt/vantage/VantageOverlook` as that user |
-| 4 | Creates a Python virtual environment and installs all dependencies |
-| 5 | Installs and enables the `vantage` systemd service (auto-starts on boot) |
+| 4 | Creates a Python 3.13 virtual environment and installs discord.py + all dependencies |
+| 5 | **Prompts you for your bot token, prefix, and owner IDs** — writes `data/config.json` |
+| 6 | Installs and enables the `vantage` systemd service (auto-starts on boot) |
+| 7 | Generates `FILE_MAP.txt` — a plain-text map of every file and what it does |
 
-> **Tip:** You can also run individual steps using the Python CLI — see [System Commands](#system-commands) below.
-
-### 2. Configure the bot
-
-```bash
-sudo -u vantage bash
-cd /opt/vantage/VantageOverlook
-source venv/bin/activate
-python launcher.py setup
-```
-
-You'll be prompted for:
-- Your **bot token** (from [Discord Developer Portal](https://discord.com/developers/applications))
-- **Command prefix** (default: `!`)
-- Your **Discord user ID(s)** (enable Developer Mode → right-click name → Copy ID)
-- A **bot description**
-
-### 3. Start the bot
+After `install.sh` finishes you can start the bot immediately:
 
 ```bash
 sudo systemctl start vantage
 sudo journalctl -u vantage -f   # watch live logs
+```
+
+---
+
+### Interactive manager (run.sh)
+
+`run.sh` gives you a friendly terminal menu for day-to-day bot management — no need to remember systemd or CLI commands:
+
+```bash
+sudo /opt/vantage/VantageOverlook/run.sh
+```
+
+Menu options:
+
+| Option | Action |
+|--------|--------|
+| 1 | Start the bot |
+| 2 | Stop the bot |
+| 3 | Restart the bot |
+| 4 | Show systemd service status |
+| 5 | Stream live logs (Ctrl+C to exit) |
+| 6 | Show last 50 log lines |
+| 7 | Re-run the setup wizard (token / prefix / owners) |
+| 8 | Update bot (git pull + pip upgrade) |
+| 9 | List cog repositories |
+| 10 | List installed cogs |
+| 11 | System health check |
+| 12 | Show FILE_MAP.txt |
+
+You can also call actions directly (skipping the menu):
+
+```bash
+sudo /opt/vantage/VantageOverlook/run.sh start
+sudo /opt/vantage/VantageOverlook/run.sh logs
+sudo /opt/vantage/VantageOverlook/run.sh update
 ```
 
 ---
@@ -242,9 +270,11 @@ Or load it at runtime (no restart needed):
 VantageOverlook/
 ├── launcher.py          CLI entry point
 ├── requirements.txt     Python dependencies
-├── install.sh           Ubuntu one-shot setup script
+├── install.sh           Ubuntu one-shot setup script (also configures token)
+├── run.sh               Interactive bot manager menu
 ├── vantage.service      systemd service unit
 ├── .env.example         Example environment file
+├── FILE_MAP.txt         Auto-generated map of every file and its purpose
 ├── core/
 │   ├── bot.py           VantageBot class
 │   ├── cog_manager.py   Repo & cog registry
