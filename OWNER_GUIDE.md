@@ -163,7 +163,7 @@ Cogs are plugins that add commands and features to your bot. You can add them fr
 
 ```bash
 # From your bot's install directory
-cd /opt/vantage/MyBot
+cd /opt/MyBot
 
 # Add the repo (replace with actual URL)
 sudo -u vantage ./venv/bin/python launcher.py repos add https://github.com/someone/cool-cogs
@@ -205,13 +205,13 @@ In Discord, `!vmanage Alpha` will only get a response from the Alpha bot (even i
 
 | What | Where |
 |------|-------|
-| Bot files | `/opt/vantage/MyBot/` |
-| Config (token, prefix, etc.) | `/opt/vantage/MyBot/data/config.json` |
-| Cog registry | `/opt/vantage/MyBot/data/cog_data.json` |
-| Downloaded cog repos | `/opt/vantage/MyBot/data/repos/` |
-| Per-server data | `/opt/vantage/MyBot/data/guilds/` |
+| Bot files | `/opt/MyBot/` |
+| Config (token, prefix, etc.) | `/var/lib/MyBot/config.json` |
+| Cog registry | `/var/lib/MyBot/cog_data.json` |
+| Downloaded cog repos | `/var/lib/MyBot/repos/` |
+| Per-server data | `/var/lib/MyBot/guilds/` |
 | Log viewer | `vmanage MyBot --logs` or `journalctl -u vantage-mybot` |
-| Python install | `/opt/vantage/MyBot/venv/` |
+| Python install | `/opt/MyBot/venv/` |
 
 ---
 
@@ -224,7 +224,7 @@ If the bot is broken and you can't figure it out:
 vmanage MyBot --stop
 
 # 2. Delete just the code (keeps your config and data)
-sudo rm -rf /opt/vantage/MyBot
+sudo rm -rf /opt/MyBot
 # (But keep a copy of data/config.json first if you want to preserve settings)
 
 # 3. Re-install

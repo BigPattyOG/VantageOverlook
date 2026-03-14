@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional
 
 # ── constants ──────────────────────────────────────────────────────────────────
 
-INSTALL_BASE = Path("/opt/vantage")
+INSTALL_BASE = Path("/opt")
 BOT_USER = "vantage"
 VERSION = "2.0.0"
 
@@ -94,7 +94,7 @@ def print_banner(subtitle: str = "Bot Manager") -> None:
 # ── bot discovery ──────────────────────────────────────────────────────────────
 
 class BotInstance:
-    """Represents one installed Vantage bot under ``/opt/vantage/<Name>/``."""
+    """Represents one installed Vantage bot under ``/opt/<Name>/``."""
 
     def __init__(self, install_dir: Path) -> None:
         self.install_dir = install_dir
@@ -110,8 +110,8 @@ class BotInstance:
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _load_config(self) -> Dict[str, Any]:
-        # Production split layout: data lives in /var/lib/vantage/<Name>/
-        varlib_cfg = Path("/var/lib/vantage") / self.install_dir.name / "config.json"
+        # Production split layout: data lives in /var/lib/<Name>/
+        varlib_cfg = Path("/var/lib") / self.install_dir.name / "config.json"
         # Legacy / dev layout: data/ next to the install dir
         local_cfg = self.install_dir / "data" / "config.json"
 
@@ -193,14 +193,24 @@ class BotInstance:
 
 
 def find_all_bots() -> List[BotInstance]:
-    """Return every Vantage installation found under ``INSTALL_BASE``."""
+    """Return every Vantage installation found under ``INSTALL_BASE``.
+
+    A directory is considered a Vantage installation only if it contains a
+    ``launcher.py`` file, which avoids picking up unrelated software under
+    ``/opt/``.
+    """
     bots: List[BotInstance] = []
     if not INSTALL_BASE.exists():
         return bots
     for d in sorted(INSTALL_BASE.iterdir()):
-        varlib_cfg = Path("/var/lib/vantage") / d.name / "config.json"
+        if not d.is_dir():
+            continue
+        # Only consider directories that contain launcher.py (Vantage marker)
+        if not (d / "launcher.py").exists():
+            continue
+        varlib_cfg = Path("/var/lib") / d.name / "config.json"
         local_cfg = d / "data" / "config.json"
-        if d.is_dir() and (varlib_cfg.exists() or local_cfg.exists()):
+        if varlib_cfg.exists() or local_cfg.exists():
             bots.append(BotInstance(d))
     return bots
 

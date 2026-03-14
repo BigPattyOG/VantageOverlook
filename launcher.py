@@ -367,7 +367,7 @@ def cogs_autoload(cog_path: str) -> None:
 # ── system ────────────────────────────────────────────────────────────────────
 
 _BOT_USER = "vantage"
-_INSTALL_DIR = Path("/opt/vantage")
+_INSTALL_DIR = Path("/opt")
 _SERVICE_SRC = Path(__file__).resolve().parent / "vantage@.service"
 _SERVICE_DEST = Path("/etc/systemd/system/vantage@.service")
 
@@ -446,7 +446,7 @@ def system_status() -> None:
 @system.command("create-user")
 @click.option("--username", default=_BOT_USER, show_default=True,
               help="Name of the Linux user to create.")
-@click.option("--home", default="/opt/vantage", show_default=True,
+@click.option("--home", default="/opt", show_default=True,
               help="Home directory for the new user.")
 def system_create_user(username: str, home: str) -> None:
     """Create the 'vantage' Linux system user for running the bot.
@@ -454,8 +454,8 @@ def system_create_user(username: str, home: str) -> None:
     Requires root (sudo).
 
     The user is created as a system account with a home directory at
-    /opt/vantage (by default). The virtual environment and code clone
-    live inside this home directory; mutable data lives in /var/lib/vantage/.
+    /opt (by default). The virtual environment and code clone
+    live inside this home directory; mutable data lives in /var/lib/<BotName>/.
 
     Example:
         sudo python launcher.py system create-user
@@ -503,7 +503,7 @@ def system_create_user(username: str, home: str) -> None:
 @click.option("--bot-name", "bot_name", default=None,
               help="Bot instance name (used for the service instance and data dir).")
 @click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
-              help="Base install directory (default: /opt/vantage). Bot code lives at <install-dir>/<BotName>/.")
+              help="Base install directory (default: /opt). Bot code lives at <install-dir>/<BotName>/.")
 def system_install_service(user: str, bot_name: str | None, install_dir: str) -> None:
     """Install (or update) the vantage@ template systemd service.
 
@@ -513,8 +513,8 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
     then enables the instance for this bot so it starts automatically on boot.
 
     The service uses the split-path layout:
-      - Code:  /opt/vantage/<BotName>/
-      - Data:  /var/lib/vantage/<BotName>/   (via VANTAGE_DATA_DIR env var)
+      - Code:  /opt/<BotName>/
+      - Data:  /var/lib/<BotName>/   (via VANTAGE_DATA_DIR env var)
       - Logs:  journald (view with journalctl -u vantage@<BotName>)
 
     Example:
@@ -540,7 +540,7 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
         except Exception:
             bot_name = install_path.name
 
-    data_dir = Path("/var/lib/vantage") / bot_name
+    data_dir = Path("/var/lib") / bot_name
     working_dir = install_path / bot_name
     venv_python = working_dir / "venv" / "bin" / "python"
     instance_svc = f"vantage@{bot_name}"
