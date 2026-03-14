@@ -14,6 +14,7 @@ Commands
 ``[p]stats``          — Detailed bot statistics.
 ``[p]announce``       — Broadcast a message to all guild system channels.
 ``[p]setactivity``    — Change the bot's activity/presence.
+``[p]botinfo``        — Show basic bot information.
 """
 
 from __future__ import annotations
@@ -29,13 +30,13 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
-log = logging.getLogger("vantage.admin")
+log = logging.getLogger("vprod.admin")
 
-EMBED_COLOUR = discord.Color.from_str("#5865F2")
+EMBED_COLOUR = discord.Color.from_str("#2DC5C5")  # Vantage teal
 GREEN = discord.Color.green()
 RED = discord.Color.red()
 GOLD = discord.Color.gold()
-BLURPLE = discord.Color.blurple()
+TEAL = discord.Color.from_str("#2DC5C5")
 
 
 # ── Management panel view ─────────────────────────────────────────────────────
@@ -200,7 +201,7 @@ class VManageView(discord.ui.View):
         embed = discord.Embed(
             title=f"Last 25 log lines — {svc}",
             description=f"```\n{log_text}\n```",
-            color=BLURPLE,
+            color=TEAL,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -227,9 +228,9 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     # Validate service name before passing to subprocess; log a warning if invalid.
     if not re.match(r'^[a-z][a-z0-9-]*$', service_name):
         log.warning(
-            "service_name '%s' in config is invalid — falling back to 'vantage'", service_name
+            "service_name '%s' in config is invalid — falling back to 'vprod'", service_name
         )
-        service_name = "vantage"
+        service_name = "vprod"
     prefix = cfg.get("prefix", "!")
 
     # Service status via systemctl
@@ -239,7 +240,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     )
     svc_active = svc_result.returncode == 0
     svc_status = (
-        "🟢 **running**" if svc_active else "🔴 **stopped**"
+        "**running**" if svc_active else "**stopped**"
     )
 
     # Uptime
@@ -697,7 +698,7 @@ class Admin(commands.Cog, name="Admin"):
         embed.add_field(name="Prefix", value=f"`{prefix}`", inline=True)
         embed.add_field(name="Guilds", value=str(len(self.bot.guilds)), inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
-        embed.set_footer(text=f"Powered by Vantage • Python {platform.python_version()}")
+        embed.set_footer(text=f"Powered by vprod | Python {platform.python_version()}")
         await ctx.send(embed=embed)
 
 

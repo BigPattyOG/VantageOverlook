@@ -16,7 +16,7 @@ from typing import List, Mapping, Optional
 import discord
 from discord.ext import commands
 
-EMBED_COLOUR = discord.Color.from_str("#5865F2")  # Discord blurple
+EMBED_COLOUR = discord.Color.from_str("#2DC5C5")  # Vantage teal
 COMMANDS_PER_PAGE = 8
 
 

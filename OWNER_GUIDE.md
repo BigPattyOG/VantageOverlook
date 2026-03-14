@@ -1,17 +1,19 @@
-# Owner Guide — Vantage Bot (Plain English Edition)
+# Owner Guide — vprod Bot (Plain English Edition)
 
-This guide is written for **you**, the person who owns the bot but doesn't want to read a technical manual. No jargon. If something breaks, start here.
+This guide is written for **you**, the person who owns the bot. No jargon. If something breaks, start here.
+
+For the full first-time setup walkthrough (Discord portal, server setup, adding devs, permissions), see **[SETUP.md](SETUP.md)**.
 
 ---
 
 ## What even is this?
 
-Vantage is your personal Discord bot. It lives on a Linux server (like a VPS), runs 24/7, and you control it either by:
+vprod is your personal Discord bot. It lives on a Linux server, runs 24/7, and you control it either by:
 
-1. **Typing commands in a terminal** on the server (`vmanage MyBot --restart`)
+1. **Typing commands in a terminal** on the server (`vmanage --restart`)
 2. **Typing commands in Discord** (`!vmanage`, `!stats`, etc.)
 
-The bot is "modular" — the core bot is tiny, but you can add extra features (called **cogs**) from GitHub or from your own files.
+The bot is "modular" — the core is tiny, but you can add extra features (called **cogs**) from GitHub or your own files.
 
 ---
 
@@ -19,31 +21,25 @@ The bot is "modular" — the core bot is tiny, but you can add extra features (c
 
 ### 1. `vmanage` — your terminal remote control
 
-After the bot is installed, you have a command called `vmanage` on your server. It replaces the old `run.sh` menu.
+After the bot is installed, you have a command called `vmanage` on your server.
 
 ```bash
-# See all your bots and their status
+# See the bot's status
 vmanage
 
-# See detailed info about a specific bot
-vmanage MyBot
-
 # Start / stop / restart the bot
-vmanage MyBot --start
-vmanage MyBot --stop
-vmanage MyBot --restart
+vmanage --start
+vmanage --stop
+vmanage --restart
 
 # Watch the bot's live output (Ctrl+C to stop)
-vmanage MyBot --logs
+vmanage --logs
 
 # See the last 50 lines of logs without streaming
-vmanage MyBot --logs --lines 50
+vmanage --logs --lines 50
 
 # Pull updates from GitHub and restart the bot
-vmanage MyBot --update
-
-# If you messed up the config, redo the setup questions
-vmanage MyBot --setup
+vmanage --update
 ```
 
 That's it. You don't need to remember any systemd commands.
@@ -61,59 +57,80 @@ Type these in any server channel the bot can see. Replace `!` with your prefix i
 
 **These only work for you (the owner):**
 - `!vmanage` — opens a management panel right in Discord with buttons to Restart, Stop, Update, and see Logs
-- `!vmanage MyBot` — same, but filters to a specific bot (useful if you have multiple)
 - `!stats` — shows how many servers the bot is in, user counts, latency, uptime
 - `!servers` — lists every server the bot is in
 - `!announce Hello everyone!` — sends that message to every server's system channel
-- `!setactivity playing chess` — changes what the bot shows as its status (playing/watching/listening/competing)
+- `!setactivity playing chess` — changes what the bot shows as its status
 - `!prefix >` — changes the command prefix from `!` to `>`
-- `!shutdown` — turns the bot off (it won't come back on until you restart it with `vmanage MyBot --start`)
+- `!shutdown` — turns the bot off (it won't come back on until you restart it with `vmanage --start`)
 - `!load my_cogs.greet` — turns on an extra cog (plugin)
-- `!reload my_cogs.greet` — reloads a cog to pick up code changes without restarting the whole bot
+- `!reload my_cogs.greet` — reloads a cog to pick up code changes without restarting
 - `!unload my_cogs.greet` — turns off a cog
 
 ---
 
-### 3. The config file — where your settings live
+### 3. Configuration — where your settings live
 
-All your bot settings are in a file called `data/config.json`. It looks like this:
+**`/var/lib/vprod/config.json`** (permissions `660`) — bot settings (prefix, name, etc.):
 
 ```json
 {
-  "name": "MyBot",
-  "token": "your-secret-token-here",
+  "name": "vprod",
+  "service_name": "vprod",
   "prefix": "!",
-  "owner_ids": [123456789],
-  "description": "My awesome bot"
+  "owner_ids": [],
+  "description": "vprod — Vantage Discord Bot"
 }
 ```
 
-**You should never share this file** — it contains your bot token, which is basically the bot's password.
+**`/opt/vprod/.env`** (permissions `600`) — your bot token (never share this file):
 
-To change settings, run:
-```bash
-vmanage MyBot --setup
 ```
-It will ask you the questions again and save your answers.
+DISCORD_TOKEN=your-secret-token-here
+```
+
+The token is stored separately in `.env` and never written to `config.json`. Lock it down:
+```bash
+sudo chmod 600 /opt/vprod/.env
+sudo chown vprodbot:vprodbot /opt/vprod/.env
+```
+
+To update your token, edit `/opt/vprod/.env` directly and restart the bot.
 
 ---
 
-## Installing the bot for the first time
+## Managing your team (group peers)
 
-Run this one command on your Ubuntu server:
+### Discord Team — who can run owner commands in Discord
+
+Owner-level Discord commands (`!vmanage`, `!shutdown`, `!stats`, etc.) are available to every **accepted member** of your Discord application team. The bot checks this automatically at startup.
+
+To invite someone to the team:
+1. Go to [https://discord.com/developers/teams](https://discord.com/developers/teams)
+2. Open your team and click **Invite Member**
+3. Enter their Discord username — they must accept the invite in their Discord notifications
+
+To remove someone: go to the team page, click the three-dot menu next to their name and select **Remove**, then restart the bot.
+
+### vprodadmins — who can manage the bot on the server
+
+The `vprodadmins` Linux group controls who can read/edit bot files and run `vmanage` on the server.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh | sudo bash
+# Add a developer (they must log out and back in after)
+sudo usermod -aG vprodadmins <linux_username>
+
+# See who is in the group
+getent group vprodadmins
+
+# Remove a developer
+sudo gpasswd -d <linux_username> vprodadmins
 ```
 
-It will:
-1. Ask you what to **name** your bot (just a label for you, like "MyBot")
-2. Ask for your **bot token** (get it from https://discord.com/developers/applications)
-3. Try to **automatically find your Discord ID** from the token — if it works, just press Enter
-4. Ask for a **command prefix** (default is `!`, so commands are like `!ping`)
-5. Set everything up and start the bot
-
-After it's done, test it with `vmanage` and try `!ping` in Discord.
+| What it controls | How to manage |
+|-----------------|--------------|
+| Who can run owner bot commands in Discord | Discord Team at discord.com/developers/teams |
+| Who can read/edit bot files on the server | `vprodadmins` Linux group via `usermod` |
 
 ---
 
@@ -121,13 +138,13 @@ After it's done, test it with `vmanage` and try `!ping` in Discord.
 
 ### Bot crashed or acting weird?
 ```bash
-vmanage MyBot --restart
-vmanage MyBot --logs       # see what went wrong
+vmanage --restart
+vmanage --logs       # see what went wrong
 ```
 
 ### Update the bot to the latest version?
 ```bash
-vmanage MyBot --update
+vmanage --update
 ```
 This pulls the latest code from GitHub, upgrades packages, and restarts automatically.
 
@@ -135,21 +152,21 @@ This pulls the latest code from GitHub, upgrades packages, and restarts automati
 
 Check if it's running:
 ```bash
-vmanage MyBot
+vmanage
 ```
 
 If it says "stopped", start it:
 ```bash
-vmanage MyBot --start
+vmanage --start
 ```
 
 If it starts but immediately stops, read the logs:
 ```bash
-vmanage MyBot --logs --lines 50
+vmanage --logs --lines 50
 ```
 
 Common causes:
-- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, and run `vmanage MyBot --setup`
+- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, update `/opt/vprod/.env`, and restart the bot.
 - **Missing intents** — go to the developer portal, find your bot, enable "Message Content Intent" and "Server Members Intent"
 - **Python error** — check the logs for a traceback
 
@@ -157,47 +174,32 @@ Common causes:
 
 ## Adding extra features (cogs)
 
-Cogs are plugins that add commands and features to your bot. You can add them from GitHub or write your own.
+Cogs are plugins that add commands and features to your bot.
 
 ### Adding a cog from GitHub
 
 ```bash
 # From your bot's install directory
-cd /opt/vantage/MyBot
+cd /opt/vprod
 
 # Add the repo (replace with actual URL)
-sudo -u vantage ./venv/bin/python launcher.py repos add https://github.com/someone/cool-cogs
+sudo -u vprodbot ./venv/bin/python launcher.py repos add https://github.com/someone/cool-cogs
 
 # Install a specific cog from that repo
-sudo -u vantage ./venv/bin/python launcher.py cogs install cool_cogs some_feature
+sudo -u vprodbot ./venv/bin/python launcher.py cogs install cool_cogs some_feature
 
 # Make it load automatically when the bot starts
-sudo -u vantage ./venv/bin/python launcher.py cogs autoload cool_cogs.some_feature
+sudo -u vprodbot ./venv/bin/python launcher.py cogs autoload cool_cogs.some_feature
 
-# Load it right now without restarting
-# (just type this in Discord:)
+# Load it right now without restarting (type this in Discord):
 !load cool_cogs.some_feature
 ```
 
 ### Seeing what cogs are loaded
 ```bash
-vmanage MyBot --cogs      # from terminal
-!cogs                     # from Discord
+vmanage --cogs      # from terminal
+!cogs               # from Discord
 ```
-
----
-
-## Running multiple bots
-
-You can run more than one Vantage bot on the same server. Just run `install.sh` again and give the new bot a different name (e.g. "Beta"). Then:
-
-```bash
-vmanage            # shows both bots
-vmanage Alpha      # manage Alpha
-vmanage Beta       # manage Beta
-```
-
-In Discord, `!vmanage Alpha` will only get a response from the Alpha bot (even if both bots are in the same server).
 
 ---
 
@@ -205,36 +207,14 @@ In Discord, `!vmanage Alpha` will only get a response from the Alpha bot (even i
 
 | What | Where |
 |------|-------|
-| Bot files | `/opt/vantage/MyBot/` |
-| Config (token, prefix, etc.) | `/opt/vantage/MyBot/data/config.json` |
-| Cog registry | `/opt/vantage/MyBot/data/cog_data.json` |
-| Downloaded cog repos | `/opt/vantage/MyBot/data/repos/` |
-| Per-server data | `/opt/vantage/MyBot/data/guilds/` |
-| Log viewer | `vmanage MyBot --logs` or `journalctl -u vantage-mybot` |
-| Python install | `/opt/vantage/MyBot/venv/` |
-
----
-
-## Something went completely wrong — nuclear option
-
-If the bot is broken and you can't figure it out:
-
-```bash
-# 1. Stop the bot
-vmanage MyBot --stop
-
-# 2. Delete just the code (keeps your config and data)
-sudo rm -rf /opt/vantage/MyBot
-# (But keep a copy of data/config.json first if you want to preserve settings)
-
-# 3. Re-install
-curl -sSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh | sudo bash
-```
-
-Or if you just want to reset the configuration:
-```bash
-vmanage MyBot --setup
-```
+| Bot code | `/opt/vprod/` |
+| Bot token | `/opt/vprod/.env` (permissions: `600`) |
+| Config (prefix, name, etc.) | `/var/lib/vprod/config.json` (permissions: `660`) |
+| Cog registry | `/var/lib/vprod/cog_data.json` |
+| Downloaded cog repos | `/var/lib/vprod/repos/` |
+| Per-server data | `/var/lib/vprod/guilds/` |
+| Log viewer | `vmanage --logs` or `journalctl -u vprod` |
+| Python install | `/opt/vprod/venv/` |
 
 ---
 
@@ -242,10 +222,9 @@ vmanage MyBot --setup
 
 | Symptom | First thing to try |
 |---------|--------------------|
-| Bot offline | `vmanage MyBot --start` |
-| Bot starts then crashes | `vmanage MyBot --logs --lines 50` |
-| Commands not working | Check prefix with `!ping` or `@BotName ping` |
-| "Not owner" error | Make sure your Discord ID is in `owner_ids` in config |
-| Token invalid error | Regenerate token in developer portal, run `vmanage MyBot --setup` |
-| Want new features | `vmanage MyBot --update` |
-| Config got messed up | `vmanage MyBot --setup` |
+| Bot offline | `vmanage --start` |
+| Bot starts then crashes | `vmanage --logs --lines 50` |
+| Commands not working | Check prefix with `!ping` or `@vprod ping` |
+| "Not owner" error | Check Discord application team membership |
+| Token invalid | Update DISCORD_TOKEN in `/opt/vprod/.env` and restart |
+| Want new features | `vmanage --update` |

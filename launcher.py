@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Vantage Bot Launcher — CLI entry point.
+"""vprod Bot Launcher — CLI entry point.
 
 Usage
 -----
 ::
 
     python launcher.py start            # Run the bot
-    python launcher.py setup            # Interactive first-run wizard
 
     python launcher.py repos list       # List registered repositories
     python launcher.py repos add URL    # Clone a GitHub repo
@@ -20,7 +19,7 @@ Usage
     python launcher.py cogs autoload COG_PATH      # Toggle autoload
 
     python launcher.py system status               # Check system readiness
-    python launcher.py system create-user          # Create 'vantage' Linux user (root)
+    python launcher.py system create-user          # Create system user and dev group (root)
     python launcher.py system install-service      # Install systemd service (root)
 """
 
@@ -41,7 +40,7 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from core.config import CONFIG_PATH, DATA_DIR, load_config, save_config
+from core.config import CONFIG_PATH, DATA_DIR, get_token, load_config, save_config
 from core.cog_manager import CogManager
 
 
@@ -64,7 +63,7 @@ def _setup_logging(debug: bool = False) -> None:
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging.")
 @click.pass_context
 def cli(ctx: click.Context, debug: bool) -> None:
-    """Vantage — a custom Discord bot framework."""
+    """vprod — Vantage Discord Bot framework."""
     ctx.ensure_object(dict)
     ctx.obj["debug"] = debug
 
@@ -75,23 +74,22 @@ def cli(ctx: click.Context, debug: bool) -> None:
 @cli.command()
 @click.pass_context
 def start(ctx: click.Context) -> None:
-    """Start the Vantage bot."""
+    """Start the vprod bot."""
     _setup_logging(ctx.obj.get("debug", False))
     from core.bot import VantageBot
 
     config = load_config()
-    token = config.get("token", "").strip()
 
-    if not token:
+    try:
+        token = get_token()
+    except RuntimeError as exc:
+        click.echo(click.style(str(exc), fg="red"))
         click.echo(
-            click.style("No bot token found.", fg="red")
-            + "\n\nRun "
-            + click.style("python launcher.py setup", bold=True)
-            + " to configure the bot."
+            "\nSet DISCORD_TOKEN in your .env file or environment and try again."
         )
         sys.exit(1)
 
-    click.echo(click.style("Starting Vantage Bot...", fg="green"))
+    click.echo(click.style("Starting vprod...", fg="cyan"))
     bot = VantageBot(config)
 
     async def _run() -> None:
@@ -102,80 +100,6 @@ def start(ctx: click.Context) -> None:
         asyncio.run(_run())
     except KeyboardInterrupt:
         click.echo(click.style("\nBot stopped.", fg="yellow"))
-
-
-# ── setup ─────────────────────────────────────────────────────────────────────
-
-
-@cli.command()
-def setup() -> None:
-    """Interactive first-run setup wizard."""
-    click.echo(click.style("\nVantage Bot — Setup Wizard\n", bold=True, fg="cyan"))
-
-    config = load_config()
-
-    # Step 1 — bot name
-    click.echo("Step 1: Bot Name")
-    click.echo("  This name identifies the bot instance (shown in vmanage, used for the service).\n")
-    name = click.prompt(
-        "  Bot name",
-        default=config.get("name", "Vantage"),
-        prompt_suffix=" > ",
-    )
-    config["name"] = name.strip()
-
-    # Step 2 — token
-    click.echo("\nStep 2: Bot Token")
-    click.echo("  Get your token from https://discord.com/developers/applications\n")
-    token = click.prompt(
-        "  Bot token",
-        default=config.get("token", ""),
-        hide_input=True,
-        show_default=False,
-        prompt_suffix=" > ",
-    )
-    config["token"] = token.strip()
-
-    # Step 3 — prefix
-    click.echo("\nStep 3: Command Prefix")
-    prefix = click.prompt(
-        "  Command prefix",
-        default=config.get("prefix", "!"),
-        prompt_suffix=" > ",
-    )
-    config["prefix"] = prefix
-
-    # Step 4 — owner IDs
-    click.echo("\nStep 4: Bot Owner(s)")
-    click.echo("  Enable Developer Mode in Discord → right-click your name → Copy ID.")
-    existing = ", ".join(str(i) for i in config.get("owner_ids", []))
-    raw = click.prompt(
-        "  Owner IDs (comma-separated)",
-        default=existing or "",
-        prompt_suffix=" > ",
-    )
-    config["owner_ids"] = [int(i.strip()) for i in raw.split(",") if i.strip().isdigit()]
-
-    # Step 5 — description
-    click.echo("\nStep 5: Bot Description")
-    desc = click.prompt(
-        "  Description",
-        default=config.get("description", "Vantage — a custom Discord bot framework"),
-        prompt_suffix=" > ",
-    )
-    config["description"] = desc
-
-    save_config(config)
-
-    click.echo(
-        click.style("\nConfig saved to ", fg="green")
-        + click.style(str(CONFIG_PATH), bold=True)
-    )
-    click.echo(
-        "\nRun "
-        + click.style("python launcher.py start", bold=True)
-        + " to launch the bot.\n"
-    )
 
 
 # ── repos ─────────────────────────────────────────────────────────────────────
@@ -366,10 +290,11 @@ def cogs_autoload(cog_path: str) -> None:
 
 # ── system ────────────────────────────────────────────────────────────────────
 
-_BOT_USER = "vantage"
-_INSTALL_DIR = Path("/opt/vantage")
-_SERVICE_SRC = Path(__file__).resolve().parent / "vantage@.service"
-_SERVICE_DEST = Path("/etc/systemd/system/vantage@.service")
+_BOT_USER = "vprodbot"
+_DEV_GROUP = "vprodadmins"
+_INSTALL_DIR = Path("/opt/vprod")
+_SERVICE_SRC = Path(__file__).resolve().parent / "vprod.service"
+_SERVICE_DEST = Path("/etc/systemd/system/vprod.service")
 
 
 @cli.group()
@@ -382,8 +307,8 @@ def system() -> None:
 
 @system.command("status")
 def system_status() -> None:
-    """Show system readiness: Linux user, service, config, and data directory."""
-    click.echo(click.style("\nVantage System Status\n", bold=True))
+    """Show system readiness: Linux user, dev group, service, config, and data directory."""
+    click.echo(click.style("\nvprod System Status\n", bold=True))
 
     # 1 — Linux user
     user_ok = _user_exists(_BOT_USER)
@@ -391,27 +316,27 @@ def system_status() -> None:
                  ok_detail="exists",
                  fail_detail=f"not found — run: sudo python launcher.py system create-user")
 
-    # 2 — install directory
+    # 2 — dev group
+    group_ok = _group_exists(_DEV_GROUP)
+    _status_line(f"Dev group '{_DEV_GROUP}'", group_ok,
+                 ok_detail="exists",
+                 fail_detail=f"not found — run: sudo python launcher.py system create-user")
+
+    # 3 — install directory
     dir_ok = _INSTALL_DIR.exists()
     _status_line(f"Install directory ({_INSTALL_DIR})", dir_ok,
                  ok_detail="exists",
                  fail_detail="not found — deploy manually (see README.md)")
 
-    # 3 — systemd service file
+    # 4 — systemd service file
     svc_ok = _SERVICE_DEST.exists()
-    _status_line("systemd service template", svc_ok,
+    _status_line("systemd service file", svc_ok,
                  ok_detail=str(_SERVICE_DEST),
                  fail_detail=f"not installed — run: sudo python launcher.py system install-service")
 
-    # 4 — service enabled/running
+    # 5 — service enabled/running
     if shutil.which("systemctl"):
-        # With the template unit (vantage@.service) we check the instance name from config
-        from core.config import load_config as _lc
-        try:
-            _cfg = _lc()
-            _svc_name = f"vantage@{_cfg.get('name', 'vantage')}"
-        except Exception:
-            _svc_name = "vantage@vantage"
+        _svc_name = "vprod"
         enabled = subprocess.run(
             ["systemctl", "is-enabled", _svc_name], capture_output=True, text=True
         ).returncode == 0
@@ -425,37 +350,38 @@ def system_status() -> None:
     else:
         click.echo("  " + click.style("[WARN]", fg="yellow") + " systemctl not found — not running on systemd")
 
-    # 5 — config
+    # 6 — config
     from core.config import CONFIG_PATH
     cfg_ok = CONFIG_PATH.exists()
     _status_line(f"Bot config ({CONFIG_PATH})", cfg_ok,
                  ok_detail="found",
-                 fail_detail="missing — run: python launcher.py setup")
+                 fail_detail="missing — create config.json in the data directory")
 
-    if cfg_ok:
-        from core.config import load_config
-        cfg = load_config()
-        token_ok = bool(cfg.get("token", "").strip())
-        _status_line("Bot token configured", token_ok,
-                     ok_detail="yes",
-                     fail_detail="no — run: python launcher.py setup")
+    # 7 — DISCORD_TOKEN in environment
+    import os as _os
+    token_ok = bool(_os.environ.get("DISCORD_TOKEN", "").strip())
+    _status_line("DISCORD_TOKEN set", token_ok,
+                 ok_detail="yes",
+                 fail_detail="no — set DISCORD_TOKEN in your .env file")
 
     click.echo()
 
 
 @system.command("create-user")
 @click.option("--username", default=_BOT_USER, show_default=True,
-              help="Name of the Linux user to create.")
-@click.option("--home", default="/opt/vantage", show_default=True,
+              help="Name of the Linux system user to create.")
+@click.option("--group", "dev_group", default=_DEV_GROUP, show_default=True,
+              help="Name of the developer group to create.")
+@click.option("--home", default=str(_INSTALL_DIR), show_default=True,
               help="Home directory for the new user.")
-def system_create_user(username: str, home: str) -> None:
-    """Create the 'vantage' Linux system user for running the bot.
+def system_create_user(username: str, dev_group: str, home: str) -> None:
+    """Create the 'vprodbot' system user and 'vprodadmins' dev group.
 
     Requires root (sudo).
 
-    The user is created as a system account with a home directory at
-    /opt/vantage (by default). The virtual environment and code clone
-    live inside this home directory; mutable data lives in /var/lib/vantage/.
+    The user is created as a system account with home at /opt/vprod.
+    The dev group allows authorised developers to manage the bot without root.
+    Mutable data lives in /var/lib/vprod/.
 
     Example:
         sudo python launcher.py system create-user
@@ -465,15 +391,28 @@ def system_create_user(username: str, home: str) -> None:
         click.echo("     Try: " + click.style(f"sudo python launcher.py system create-user", bold=True))
         sys.exit(1)
 
+    # Create dev group first
+    if _group_exists(dev_group):
+        click.echo(click.style(f"Group '{dev_group}' already exists.", fg="cyan"))
+    else:
+        click.echo(f"Creating dev group '{dev_group}'...")
+        try:
+            subprocess.run(["groupadd", "--system", dev_group], check=True)
+            click.echo(click.style(f"Group '{dev_group}' created.", fg="green"))
+        except subprocess.CalledProcessError as exc:
+            click.echo(click.style(f"Failed to create group: {exc}", fg="red"))
+            sys.exit(1)
+
+    # Create bot user
     if _user_exists(username):
-        click.echo(click.style(f"User '{username}' already exists.", fg="green"))
+        click.echo(click.style(f"User '{username}' already exists.", fg="cyan"))
         _print_user_info(username)
         return
 
     home_path = Path(home)
     click.echo(click.style(f"\nCreating system user '{username}'...\n", bold=True))
     click.echo(f"   Username  : {username}")
-    click.echo(f"   Home dir  : {home_path / username}")
+    click.echo(f"   Home dir  : {home_path}")
     click.echo(f"   Shell     : /bin/bash")
     click.echo(f"   Type      : system account (no login password)\n")
 
@@ -484,13 +423,15 @@ def system_create_user(username: str, home: str) -> None:
                 "useradd",
                 "--system",
                 "--shell", "/bin/bash",
-                "--home-dir", str(home_path / username),
+                "--home-dir", str(home_path),
                 "--create-home",
                 username,
             ],
             check=True,
         )
         click.echo(click.style(f"User '{username}' created successfully.", fg="green"))
+        click.echo(f"\nTo add a developer to the '{dev_group}' group:")
+        click.echo(click.style(f"  sudo usermod -aG {dev_group} <username>", bold=True))
         _print_user_info(username)
     except subprocess.CalledProcessError as exc:
         click.echo(click.style(f"Failed to create user: {exc}", fg="red"))
@@ -500,26 +441,23 @@ def system_create_user(username: str, home: str) -> None:
 @system.command("install-service")
 @click.option("--user", default=_BOT_USER, show_default=True,
               help="Linux user the service will run as.")
-@click.option("--bot-name", "bot_name", default=None,
-              help="Bot instance name (used for the service instance and data dir).")
-@click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
-              help="Base install directory (default: /opt/vantage). Bot code lives at <install-dir>/<BotName>/.")
-def system_install_service(user: str, bot_name: str | None, install_dir: str) -> None:
-    """Install (or update) the vantage@ template systemd service.
+def system_install_service(user: str) -> None:
+    """Install (or update) the vprod systemd service.
 
     Requires root (sudo).
 
-    Copies vantage@.service into /etc/systemd/system/, patches the User field,
-    then enables the instance for this bot so it starts automatically on boot.
+    Copies vprod.service into /etc/systemd/system/, patches the User field,
+    then enables it so the bot starts automatically on boot.
 
-    The service uses the split-path layout:
-      - Code:  /opt/vantage/<BotName>/
-      - Data:  /var/lib/vantage/<BotName>/   (via VANTAGE_DATA_DIR env var)
-      - Logs:  journald (view with journalctl -u vantage@<BotName>)
+    Layout:
+      - Code:  /opt/vprod/
+      - Data:  /var/lib/vprod/   (via VPROD_DATA_DIR env var)
+      - Token: /opt/vprod/.env   (DISCORD_TOKEN)
+      - Logs:  journald (journalctl -u vprod -f)
 
     Example:
-        sudo python launcher.py system install-service --bot-name MyBot
-        sudo systemctl start vantage@MyBot
+        sudo python launcher.py system install-service
+        sudo systemctl start vprod
     """
     if os.geteuid() != 0:
         click.echo(click.style("This command must be run as root.", fg="red"))
@@ -527,35 +465,21 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
         sys.exit(1)
 
     if not _SERVICE_SRC.exists():
-        click.echo(click.style(f"Service template not found: {_SERVICE_SRC}", fg="red"))
+        click.echo(click.style(f"Service file not found: {_SERVICE_SRC}", fg="red"))
         sys.exit(1)
 
-    install_path = Path(install_dir)
-
-    # Determine bot name for the instance
-    if not bot_name:
-        try:
-            from core.config import load_config as _lc
-            bot_name = _lc().get("name", install_path.name)
-        except Exception:
-            bot_name = install_path.name
-
-    data_dir = Path("/var/lib/vantage") / bot_name
-    working_dir = install_path / bot_name
-    venv_python = working_dir / "venv" / "bin" / "python"
-    instance_svc = f"vantage@{bot_name}"
+    venv_python = _INSTALL_DIR / "venv" / "bin" / "python"
+    data_dir = Path("/var/lib/vprod")
 
     click.echo(click.style("\nInstalling systemd service...\n", bold=True))
-    click.echo(f"   Template file : {_SERVICE_DEST}")
-    click.echo(f"   Instance      : {instance_svc}")
+    click.echo(f"   Service file  : {_SERVICE_DEST}")
+    click.echo(f"   Service name  : vprod")
     click.echo(f"   Run as user   : {user}")
-    click.echo(f"   Working dir   : {working_dir}")
+    click.echo(f"   Working dir   : {_INSTALL_DIR}")
     click.echo(f"   Data dir      : {data_dir}")
     click.echo(f"   Python        : {venv_python}\n")
 
-    # Read the template and only patch the User= field.
-    # WorkingDirectory, ExecStart, and Environment already use %i placeholders
-    # in the template file and need no further patching.
+    # Read the service file and patch the User= field.
     content = _SERVICE_SRC.read_text(encoding="utf-8")
     patched_lines = []
     for line in content.splitlines():
@@ -566,17 +490,17 @@ def system_install_service(user: str, bot_name: str | None, install_dir: str) ->
 
     _SERVICE_DEST.write_text("\n".join(patched_lines) + "\n", encoding="utf-8")
 
-    # Create the data directory if it doesn't exist
+    # Ensure the data directory exists
     data_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         subprocess.run(["systemctl", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "enable", instance_svc], check=True)
-        click.echo(click.style(f"Service {instance_svc} installed and enabled.", fg="green"))
+        subprocess.run(["systemctl", "enable", "vprod"], check=True)
+        click.echo(click.style("Service 'vprod' installed and enabled.", fg="green"))
         click.echo("\nStart the bot now with:")
-        click.echo("  " + click.style(f"sudo systemctl start {instance_svc}", bold=True))
+        click.echo("  " + click.style("sudo systemctl start vprod", bold=True))
         click.echo("Watch the logs:")
-        click.echo("  " + click.style(f"sudo journalctl -u {instance_svc} -f", bold=True))
+        click.echo("  " + click.style("sudo journalctl -u vprod -f", bold=True))
     except FileNotFoundError:
         click.echo(click.style("systemctl not found — are you on a systemd system?", fg="yellow"))
     except subprocess.CalledProcessError as exc:
@@ -597,6 +521,16 @@ def _user_exists(username: str) -> bool:
         return False
 
 
+def _group_exists(groupname: str) -> bool:
+    """Return True if a Linux group with the given name exists."""
+    try:
+        import grp
+        grp.getgrnam(groupname)
+        return True
+    except KeyError:
+        return False
+
+
 def _print_user_info(username: str) -> None:
     """Print a brief summary of the user's home directory and next steps."""
     try:
@@ -607,12 +541,11 @@ def _print_user_info(username: str) -> None:
     except KeyError:
         pass
     click.echo("Next steps:")
-    click.echo(f"  Switch to the user : " + click.style(f"sudo -u {username} bash", bold=True))
-    click.echo(f"  Run the setup wizard: " + click.style("python launcher.py setup", bold=True))
+    click.echo(f"  Deploy the bot code : " + click.style(f"sudo git clone <repo> /opt/vprod", bold=True))
 
 
 def _status_line(label: str, ok: bool, ok_detail: str = "", fail_detail: str = "") -> None:
-    icon = click.style("[OK]", fg="green") if ok else click.style("[FAIL]", fg="red")
+    icon = click.style("[OK]", fg="cyan") if ok else click.style("[FAIL]", fg="red")
     detail = ok_detail if ok else click.style(fail_detail, fg="yellow")
     click.echo(f"  {icon}  {label}" + (f" — {detail}" if detail else ""))
 
