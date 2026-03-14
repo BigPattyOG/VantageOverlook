@@ -2,6 +2,8 @@
 
 This guide is written for **you**, the person who owns the bot. No jargon. If something breaks, start here.
 
+For the full first-time setup walkthrough (Discord portal, server setup, adding devs), see **[SETUP.md](SETUP.md)**.
+
 ---
 
 ## What even is this?
@@ -93,11 +95,41 @@ DISCORD_TOKEN=your-secret-token-here
 
 The token is stored separately in `.env` and never written to `config.json`. Lock it down:
 ```bash
-sudo chmod 600 /opt/vprod/.env
-sudo chown vprodbot:vprodbot /opt/vprod/.env
+sudo chmod 600 /opt/vprod/vprod/.env
+sudo chown vprodbot:vprodbot /opt/vprod/vprod/.env
 ```
 
-To update your token, edit `/opt/vprod/.env` directly and restart the bot.
+To update your token, edit `/opt/vprod/vprod/.env` directly and restart the bot.
+
+---
+
+## Managing your team (group peers)
+
+### Discord Team — who can run owner commands in Discord
+
+Owner-level Discord commands (`!vmanage`, `!shutdown`, `!stats`, etc.) are available to every **accepted member** of your Discord application team. The bot checks this automatically at startup.
+
+To invite someone to the team:
+1. Go to [https://discord.com/developers/teams](https://discord.com/developers/teams)
+2. Open your team and click **Invite Member**
+3. Enter their Discord username — they must accept the invite in their Discord notifications
+
+To remove someone: go to the team page, click the three-dot menu next to their name and select **Remove**, then restart the bot.
+
+### vprodadmins — who can manage the bot on the server
+
+The `vprodadmins` Linux group controls who can read/edit bot files and run `vmanage` on the server.
+
+```bash
+# Add a developer (they must log out and back in after)
+sudo usermod -aG vprodadmins <linux_username>
+
+# See who is in the group
+getent group vprodadmins
+
+# Remove a developer
+sudo gpasswd -d <linux_username> vprodadmins
+```
 
 ---
 
@@ -133,7 +165,7 @@ vmanage vprod --logs --lines 50
 ```
 
 Common causes:
-- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, update `/opt/vprod/.env`, and restart the bot.
+- **Invalid token** — your token expired or was reset. Go to discord.com/developers, regenerate it, update `/opt/vprod/vprod/.env`, and restart the bot.
 - **Missing intents** — go to the developer portal, find your bot, enable "Message Content Intent" and "Server Members Intent"
 - **Python error** — check the logs for a traceback
 
@@ -147,7 +179,7 @@ Cogs are plugins that add commands and features to your bot.
 
 ```bash
 # From your bot's install directory
-cd /opt/vprod
+cd /opt/vprod/vprod
 
 # Add the repo (replace with actual URL)
 sudo -u vprodbot ./venv/bin/python launcher.py repos add https://github.com/someone/cool-cogs
@@ -174,14 +206,14 @@ vmanage vprod --cogs      # from terminal
 
 | What | Where |
 |------|-------|
-| Bot code | `/opt/vprod/` |
-| Bot token | `/opt/vprod/.env` |
-| Config (prefix, name, etc.) | `/var/lib/vprod/config.json` |
-| Cog registry | `/var/lib/vprod/cog_data.json` |
-| Downloaded cog repos | `/var/lib/vprod/repos/` |
-| Per-server data | `/var/lib/vprod/guilds/` |
+| Bot code | `/opt/vprod/vprod/` |
+| Bot token | `/opt/vprod/vprod/.env` |
+| Config (prefix, name, etc.) | `/var/lib/vprod/vprod/config.json` |
+| Cog registry | `/var/lib/vprod/vprod/cog_data.json` |
+| Downloaded cog repos | `/var/lib/vprod/vprod/repos/` |
+| Per-server data | `/var/lib/vprod/vprod/guilds/` |
 | Log viewer | `vmanage vprod --logs` or `journalctl -u vprod@vprod` |
-| Python install | `/opt/vprod/venv/` |
+| Python install | `/opt/vprod/vprod/venv/` |
 
 ---
 
@@ -193,5 +225,5 @@ vmanage vprod --cogs      # from terminal
 | Bot starts then crashes | `vmanage vprod --logs --lines 50` |
 | Commands not working | Check prefix with `!ping` or `@vprod ping` |
 | "Not owner" error | Check Discord application team membership |
-| Token invalid | Update DISCORD_TOKEN in `/opt/vprod/.env` and restart |
+| Token invalid | Update DISCORD_TOKEN in `/opt/vprod/vprod/.env` and restart |
 | Want new features | `vmanage vprod --update` |

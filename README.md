@@ -2,6 +2,8 @@
 
 A modular Discord bot framework built on [discord.py](https://discordpy.readthedocs.io/), designed for self-hosting on Ubuntu servers. Deploy once, manage everything from the terminal with `vmanage` or from Discord with `!vmanage`.
 
+**New here? Start with [SETUP.md](SETUP.md) — a complete step-by-step guide from Discord portal to running bot.**
+
 ---
 
 ## Table of Contents
@@ -40,9 +42,9 @@ vprod@.service      systemd template unit
 
 | Path | Purpose |
 |------|---------|
-| `/opt/vprod/` | Git clone (code, venv) |
-| `/var/lib/vprod/` | Mutable data (config.json, cog_data.json, guild files, cloned repos) |
-| `/usr/local/bin/vmanage` | System-wide CLI (symlink or copy) |
+| `/opt/vprod/vprod/` | Git clone (code, venv, .env) |
+| `/var/lib/vprod/vprod/` | Mutable data (config.json, cog_data.json, guild files, repos) |
+| `/usr/local/bin/vmanage` | System-wide CLI (symlink) |
 
 **Data directory resolution** (checked in order):
 1. `VPROD_DATA_DIR` environment variable
@@ -69,7 +71,7 @@ vprod@.service      systemd template unit
 
 ## Manual Setup — AWS Ubuntu
 
-These steps assume a fresh Ubuntu 22.04+ EC2 instance. Run all commands as root (or with sudo) unless stated otherwise.
+These steps assume a fresh Ubuntu 22.04+ EC2 instance. Run all commands as root (or with sudo) unless stated otherwise. For a complete step-by-step walkthrough including the Discord developer portal and group peer setup, see **[SETUP.md](SETUP.md)**.
 
 ### 1. Install system dependencies
 
@@ -78,11 +80,15 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y git python3 python3-pip python3-venv build-essential
 ```
 
-### 2. Create the system user and dev group
+### 2. Clone and create the system user + dev group
 
 ```bash
-sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vprod
-sudo python3 /opt/vprod/launcher.py system create-user
+# The bot code lives at /opt/vprod/vprod/ (a subdirectory of the install base)
+sudo mkdir -p /opt/vprod
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vprod/vprod
+sudo python3 /opt/vprod/vprod/launcher.py system create-user
+sudo chown -R vprodbot:vprodadmins /opt/vprod/vprod
+sudo chmod -R 750 /opt/vprod/vprod
 ```
 
 This creates the `vprodbot` system account and the `vprodadmins` developer group.
@@ -96,7 +102,7 @@ sudo usermod -aG vprodadmins <yourusername>
 
 ```bash
 sudo -u vprodbot bash -c "
-    cd /opt/vprod
+    cd /opt/vprod/vprod
     python3 -m venv venv
     venv/bin/pip install --upgrade pip
     venv/bin/pip install -r requirements.txt
@@ -106,9 +112,9 @@ sudo -u vprodbot bash -c "
 ### 4. Create the data directory
 
 ```bash
-sudo mkdir -p /var/lib/vprod
-sudo chown -R vprodbot:vprodbot /var/lib/vprod
-sudo chmod 750 /var/lib/vprod
+sudo mkdir -p /var/lib/vprod/vprod
+sudo chown -R vprodbot:vprodadmins /var/lib/vprod/vprod
+sudo chmod 750 /var/lib/vprod/vprod
 ```
 
 ### 5. Configure the bot
@@ -116,11 +122,10 @@ sudo chmod 750 /var/lib/vprod
 Create the `.env` file with your bot token:
 
 ```bash
-sudo -u vprodbot bash -c "
-    cp /opt/vprod/.env.example /opt/vprod/.env
-    # Edit the file and set your DISCORD_TOKEN
-"
-sudo chmod 600 /opt/vprod/.env
+sudo -u vprodbot cp /opt/vprod/vprod/.env.example /opt/vprod/vprod/.env
+sudo nano /opt/vprod/vprod/.env   # add your DISCORD_TOKEN
+sudo chmod 600 /opt/vprod/vprod/.env
+sudo chown vprodbot:vprodbot /opt/vprod/vprod/.env
 ```
 
 Your `.env` file should contain:
@@ -132,21 +137,19 @@ DISCORD_TOKEN=your_discord_bot_token_here
 Create `config.json` in the data directory:
 
 ```bash
-sudo -u vprodbot bash -c "
-    mkdir -p /var/lib/vprod
-    cat > /var/lib/vprod/config.json << 'EOF'
+sudo -u vprodbot tee /var/lib/vprod/vprod/config.json > /dev/null << 'EOF'
 {
-  \"name\": \"vprod\",
-  \"service_name\": \"vprod\",
-  \"prefix\": \"!\",
-  \"owner_ids\": [],
-  \"description\": \"vprod — Vantage Discord Bot\",
-  \"status\": \"online\",
-  \"activity\": \"{prefix}help for commands\"
+  "name": "vprod",
+  "service_name": "vprod",
+  "prefix": "!",
+  "owner_ids": [],
+  "description": "vprod — Vantage Discord Bot",
+  "status": "online",
+  "activity": "{prefix}help for commands"
 }
 EOF
-"
-sudo chmod 600 /var/lib/vprod/config.json
+sudo chmod 640 /var/lib/vprod/vprod/config.json
+sudo chown vprodbot:vprodadmins /var/lib/vprod/vprod/config.json
 ```
 
 Note: `owner_ids` is optional. Owners are resolved automatically from your Discord application team.
@@ -154,8 +157,9 @@ Note: `owner_ids` is optional. Owners are resolved automatically from your Disco
 ### 6. Install the systemd service
 
 ```bash
-sudo python3 /opt/vprod/launcher.py system install-service
+sudo python3 /opt/vprod/vprod/launcher.py system install-service
 sudo systemctl start vprod@vprod
+sudo systemctl enable vprod@vprod
 ```
 
 Check service status:
@@ -168,7 +172,7 @@ sudo journalctl -u vprod@vprod -f
 ### 7. Install vmanage system-wide
 
 ```bash
-sudo ln -sf /opt/vprod/vmanage.py /usr/local/bin/vmanage
+sudo ln -sf /opt/vprod/vprod/vmanage.py /usr/local/bin/vmanage
 sudo chmod +x /usr/local/bin/vmanage
 ```
 
@@ -179,10 +183,11 @@ Now any user can run `vmanage vprod --status`.
 The `!vmanage` Discord panel uses `sudo systemctl` to restart/stop the bot. Add a sudoers entry so this works without a password:
 
 ```bash
-echo "vprodbot ALL=(ALL) NOPASSWD: /bin/systemctl restart vprod, \
-    /bin/systemctl stop vprod, \
-    /bin/systemctl start vprod" \
-    | sudo tee /etc/sudoers.d/vprod
+sudo tee /etc/sudoers.d/vprod > /dev/null << 'EOF'
+vprodbot ALL=(ALL) NOPASSWD: /bin/systemctl restart vprod@vprod, \
+    /bin/systemctl stop vprod@vprod, \
+    /bin/systemctl start vprod@vprod
+EOF
 sudo chmod 440 /etc/sudoers.d/vprod
 ```
 
@@ -208,7 +213,7 @@ vmanage vprod --repos           # list cog repositories
 vmanage vprod --debug           # show debug resolution info
 ```
 
-Bot discovery: scans `/opt/vprod/` for subdirectories. Name matching is case-insensitive and supports prefix matching.
+Bot discovery: scans `/opt/vprod/` for subdirectories that contain a `config.json`. Name matching is case-insensitive and supports prefix matching.
 
 ---
 
@@ -273,7 +278,7 @@ The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry fro
 
 ## Configuration
 
-**`/var/lib/vprod/config.json`** (permissions: `600`):
+**`/var/lib/vprod/vprod/config.json`** (permissions: `640`):
 
 ```json
 {
@@ -287,7 +292,7 @@ The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry fro
 }
 ```
 
-**`/opt/vprod/.env`** (permissions: `600`):
+**`/opt/vprod/vprod/.env`** (permissions: `600`):
 
 ```
 DISCORD_TOKEN=your_discord_bot_token_here
@@ -318,7 +323,7 @@ Cogs are Python extensions. The loader (`CogManager`) stores state in `<data_dir
 `<data_dir>/repos/` is inserted into `sys.path` at bot startup. This means:
 
 ```
-/var/lib/vprod/repos/
+/var/lib/vprod/vprod/repos/
   my_cogs/
     greet.py          -> importable as  my_cogs.greet
     welcome/
@@ -328,17 +333,19 @@ Cogs are Python extensions. The loader (`CogManager`) stores state in `<data_dir
 ### Adding a GitHub repo
 
 ```bash
-python launcher.py repos add https://github.com/user/my-cogs
-python launcher.py cogs install my_cogs greet
-python launcher.py cogs autoload my_cogs.greet
-# restart the bot, or:
+cd /opt/vprod/vprod
+sudo -u vprodbot ./venv/bin/python launcher.py repos add https://github.com/user/my-cogs
+sudo -u vprodbot ./venv/bin/python launcher.py cogs install my_cogs greet
+sudo -u vprodbot ./venv/bin/python launcher.py cogs autoload my_cogs.greet
+# restart the bot, or load immediately in Discord:
 !load my_cogs.greet
 ```
 
 ### Adding a local repo
 
 ```bash
-python launcher.py repos add /home/user/my-cogs --name my_cogs
+cd /opt/vprod/vprod
+sudo -u vprodbot ./venv/bin/python launcher.py repos add /home/user/my-cogs --name my_cogs
 ```
 
 This creates a symlink at `<data_dir>/repos/my_cogs -> /home/user/my-cogs`.
@@ -370,35 +377,37 @@ set_guild_value(ctx.guild.id, "muted_role", role.id)
 role_id = get_guild_value(ctx.guild.id, "muted_role")
 ```
 
-Files live at `<data_dir>/guilds/{guild_id}.json`.
+Files live at `<data_dir>/guilds/{guild_id}.json`, i.e. `/var/lib/vprod/vprod/guilds/{guild_id}.json` in production.
 
 ---
 
 ## Project Structure
 
 ```
-/opt/vprod/                       (git clone)
-├── vmanage.py           System-wide CLI management tool
-├── launcher.py          Bot-scoped CLI (start, repos, cogs, system)
-├── vprod@.service       systemd template unit
-├── requirements.txt     Python dependencies
-├── .env                 Bot token and env vars (gitignored, chmod 600)
-├── .env.example         Environment variable template
-├── README.md            This file
-├── OWNER_GUIDE.md       Plain-English owner guide
-├── COGS.md              Cog authoring reference
-│
-├── core/
-│   ├── bot.py           VantageBot class
-│   ├── config.py        Config helpers + resolve_data_dir()
-│   ├── cog_manager.py   Repo + cog registry
-│   ├── guild_data.py    Per-guild JSON storage
-│   └── help_command.py  Paginated help with Discord UI
-│
-└── cogs/
-    └── admin.py         Built-in admin cog (always loaded)
+/opt/vprod/                       (install base — can hold multiple bot instances)
+  vprod/                          (this bot's code — git clone)
+    vmanage.py           System-wide CLI management tool
+    launcher.py          Bot-scoped CLI (start, repos, cogs, system)
+    vprod@.service       systemd template unit
+    requirements.txt     Python dependencies
+    .env                 Bot token and env vars (gitignored, chmod 600)
+    .env.example         Environment variable template
+    README.md            Technical reference
+    SETUP.md             Full setup guide (Discord portal, peers, all steps)
+    OWNER_GUIDE.md       Plain-English owner guide
+    COGS.md              Cog authoring reference
+    │
+    ├── core/
+    │   ├── bot.py           VantageBot class
+    │   ├── config.py        Config helpers + resolve_data_dir()
+    │   ├── cog_manager.py   Repo + cog registry
+    │   ├── guild_data.py    Per-guild JSON storage
+    │   └── help_command.py  Paginated help with Discord UI
+    │
+    └── cogs/
+        └── admin.py         Built-in admin cog (always loaded)
 
-/var/lib/vprod/                   (mutable data — gitignored)
+/var/lib/vprod/vprod/             (mutable data — separate from code, gitignored)
 ├── config.json
 ├── cog_data.json
 ├── repos/
