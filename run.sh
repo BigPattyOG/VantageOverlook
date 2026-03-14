@@ -13,9 +13,27 @@ set -euo pipefail
 # ── configuration ─────────────────────────────────────────────────────────────
 INSTALL_DIR="/opt/vantage/VantageOverlook"
 BOT_USER="vantage"
-SERVICE_NAME="vantage"
 VENV_PYTHON="$INSTALL_DIR/venv/bin/python"
 VENV_PIP="$INSTALL_DIR/venv/bin/pip"
+
+# Derive the service name dynamically from config.json (supports multi-bot setups).
+# Falls back to 'vantage' if config is absent or unparseable.
+_read_service_name() {
+    local cfg="$INSTALL_DIR/data/config.json"
+    if [[ -f "$cfg" ]] && command -v python3 &>/dev/null; then
+        python3 -c "
+import json, sys
+try:
+    d = json.load(open('$cfg'))
+    print(d.get('service_name', 'vantage'))
+except Exception:
+    print('vantage')
+" 2>/dev/null || echo "vantage"
+    else
+        echo "vantage"
+    fi
+}
+SERVICE_NAME=$(_read_service_name)
 
 # ── colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'

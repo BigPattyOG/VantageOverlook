@@ -13,6 +13,8 @@ from typing import Any, Dict, List
 CONFIG_PATH = Path("data/config.json")
 
 DEFAULT_CONFIG: Dict[str, Any] = {
+    "name": "Vantage",
+    "service_name": "vantage",
     "token": "",
     "prefix": "!",
     "owner_ids": [],

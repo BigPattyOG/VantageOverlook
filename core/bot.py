@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import discord
 from discord.ext import commands
@@ -31,6 +32,7 @@ class VantageBot(commands.Bot):
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.cog_manager = CogManager()
+        self.start_time: Optional[datetime] = None
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -68,6 +70,7 @@ class VantageBot(commands.Bot):
                 log.exception("Failed to autoload cog: %s", cog_path)
 
     async def on_ready(self) -> None:
+        self.start_time = datetime.now(timezone.utc)
         prefix = self.config.get("prefix", "!")
         activity_text = self.config.get("activity", "{prefix}help for commands").replace(
             "{prefix}", prefix
