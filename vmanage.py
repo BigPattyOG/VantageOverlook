@@ -63,10 +63,10 @@ def blue(t: str) -> str:    return _c(t, "34")
 def magenta(t: str) -> str: return _c(t, "35")
 
 
-def ok(msg: str) -> None:   print(f"  {green('✔')}  {msg}")
-def warn(msg: str) -> None: print(f"  {yellow('⚠')}  {msg}")
-def err(msg: str) -> None:  print(f"  {red('✘')}  {msg}", file=sys.stderr)
-def info(msg: str) -> None: print(f"  {cyan('›')}  {msg}")
+def ok(msg: str) -> None:   print(f"  {green('[ok]')}  {msg}")
+def warn(msg: str) -> None: print(f"  {yellow('[!]')}  {msg}")
+def err(msg: str) -> None:  print(f"  {red('[x]')}  {msg}", file=sys.stderr)
+def info(msg: str) -> None: print(f"  {cyan('>')}  {msg}")
 
 
 def die(msg: str) -> None:
@@ -110,13 +110,18 @@ class BotInstance:
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _load_config(self) -> Dict[str, Any]:
-        cfg = self.install_dir / "data" / "config.json"
-        if cfg.exists():
-            try:
-                with open(cfg, encoding="utf-8") as fh:
-                    return json.load(fh)
-            except Exception:
-                pass
+        # Production split layout: data lives in /var/lib/vantage/<Name>/
+        varlib_cfg = Path("/var/lib/vantage") / self.install_dir.name / "config.json"
+        # Legacy / dev layout: data/ next to the install dir
+        local_cfg = self.install_dir / "data" / "config.json"
+
+        for cfg in (varlib_cfg, local_cfg):
+            if cfg.exists():
+                try:
+                    with open(cfg, encoding="utf-8") as fh:
+                        return json.load(fh)
+                except Exception:
+                    pass
         return {}
 
     def has_venv(self) -> bool:
@@ -193,7 +198,9 @@ def find_all_bots() -> List[BotInstance]:
     if not INSTALL_BASE.exists():
         return bots
     for d in sorted(INSTALL_BASE.iterdir()):
-        if d.is_dir() and (d / "data" / "config.json").exists():
+        varlib_cfg = Path("/var/lib/vantage") / d.name / "config.json"
+        local_cfg = d / "data" / "config.json"
+        if d.is_dir() and (varlib_cfg.exists() or local_cfg.exists()):
             bots.append(BotInstance(d))
     return bots
 
@@ -340,8 +347,8 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
 def do_setup(bot: BotInstance, debug: bool = False) -> None:
     if not bot.has_venv():
         die(f"Virtual environment not found at {bot.install_dir}/venv\n"
-            f"  Run install.sh first.")
-    info(f"Launching setup wizard for {bold(bot.name)}…")
+            f"  Set up the venv manually — see README.md for instructions.")
+    info(f"Launching setup wizard for {bold(bot.name)}...")
     print()
     _run_bot_cmd(bot, str(bot.venv_python), "launcher.py setup")
 
@@ -409,7 +416,7 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     if py_ver:
         print(f"  Python         : {green(py_ver)}  {dim('(venv active)')}")
     else:
-        print(f"  Python         : {red('venv not found')}  {dim('— run install.sh')}")
+        print(f"  Python         : {red('venv not found')}  {dim('— set up venv manually')}")
 
     # Token
     if not bot.has_token():
@@ -446,9 +453,7 @@ def do_list() -> None:
 
     bots = find_all_bots()
     if not bots:
-        warn(f"No bot instances found under {INSTALL_BASE}")
-        print()
-        info("Install a new bot:  sudo bash /path/to/VantageOverlook/install.sh")
+        info("No bot instances found. Deploy manually — see README.md for setup steps.")
         print()
         return
 

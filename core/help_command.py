@@ -54,7 +54,7 @@ class HelpView(discord.ui.View):
         self._sync()
         await interaction.response.edit_message(embed=self.pages[self.page], view=self)
 
-    @discord.ui.button(label="🔍 Search", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="Search", style=discord.ButtonStyle.primary)
     async def search_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
         await interaction.response.send_modal(_SearchModal(self.pages))
 
@@ -97,13 +97,13 @@ class _SearchModal(discord.ui.Modal, title="Search Commands"):
 
         if not matches:
             embed = discord.Embed(
-                title="🔍 No results",
+                title="No results",
                 description=f"No commands matched **{discord.utils.escape_markdown(self.query.value)}**.",
                 color=discord.Color.red(),
             )
         else:
             embed = discord.Embed(
-                title=f"🔍 Results for '{discord.utils.escape_markdown(self.query.value)}'",
+                title=f"Results for '{discord.utils.escape_markdown(self.query.value)}'",
                 color=EMBED_COLOUR,
             )
             for field in matches[:15]:
@@ -126,7 +126,7 @@ class VantageHelp(commands.HelpCommand):
         embed = discord.Embed(title=title, description=description, color=EMBED_COLOUR)
         embed.set_footer(
             text=f"Use {self.context.clean_prefix}help <command> for details • "
-                 "🔍 Search button to find commands"
+                 "Search button to find commands"
         )
         return embed
 
@@ -152,7 +152,7 @@ class VantageHelp(commands.HelpCommand):
         """Show all cogs and their top-level commands."""
         pages: List[discord.Embed] = []
         current_embed = self._base_embed(
-            "📖 Vantage Help",
+            "Vantage Help",
             f"**Prefix:** `{self.context.clean_prefix}`\n\n"
             "Use the buttons below to navigate, or search for a specific command.",
         )
@@ -171,7 +171,7 @@ class VantageHelp(commands.HelpCommand):
             # Split large cogs across pages
             if count + len(filtered) > COMMANDS_PER_PAGE:
                 pages.append(current_embed)
-                current_embed = self._base_embed("📖 Vantage Help (continued)")
+                current_embed = self._base_embed("Vantage Help (continued)")
                 count = 0
 
             header = f"**{cog_name}**" + (f" — {cog_desc}" if cog_desc else "")
@@ -193,7 +193,7 @@ class VantageHelp(commands.HelpCommand):
 
         for chunk in chunks:
             embed = self._base_embed(
-                f"📦 {cog.qualified_name}",
+                f"{cog.qualified_name}",
                 cog.description or "",
             )
             for cmd in chunk:
@@ -211,7 +211,7 @@ class VantageHelp(commands.HelpCommand):
         filtered = await self.filter_commands(group.commands, sort=True)
 
         embed = self._base_embed(
-            f"📋 {self.context.clean_prefix}{group.qualified_name}",
+            f"{self.context.clean_prefix}{group.qualified_name}",
             group.help or group.short_doc or "No description.",
         )
         embed.add_field(name="Usage", value=f"`{self.context.clean_prefix}{group.qualified_name} {group.signature}`", inline=False)
@@ -231,7 +231,7 @@ class VantageHelp(commands.HelpCommand):
     async def send_command_help(self, command: commands.Command) -> None:
         """Show detailed help for a single command."""
         embed = self._base_embed(
-            f"📋 {self.context.clean_prefix}{command.qualified_name}",
+            f"{self.context.clean_prefix}{command.qualified_name}",
             command.help or command.short_doc or "No description.",
         )
         embed.add_field(
@@ -255,7 +255,7 @@ class VantageHelp(commands.HelpCommand):
 
     async def send_error_message(self, error: str) -> None:
         embed = discord.Embed(
-            title="❌ Help Error",
+            title="Help Error",
             description=error,
             color=discord.Color.red(),
         )

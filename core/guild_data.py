@@ -1,8 +1,10 @@
 """Per-guild JSON data storage for VantageBot.
 
-Each guild gets its own file at ``data/guilds/{guild_id}.json``.
+Each guild gets its own file at ``<data_dir>/guilds/{guild_id}.json``.
 Use :func:`load_guild` and :func:`save_guild` to read/write guild-specific
 settings and state without touching the global ``config.json``.
+
+The data directory is resolved via :func:`core.config.resolve_data_dir`.
 """
 
 from __future__ import annotations
@@ -11,7 +13,9 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-GUILDS_DIR = Path("data/guilds")
+from .config import resolve_data_dir
+
+GUILDS_DIR = resolve_data_dir() / "guilds"
 
 DEFAULT_GUILD: Dict[str, Any] = {}
 

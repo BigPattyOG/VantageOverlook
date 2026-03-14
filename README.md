@@ -1,13 +1,13 @@
 # VantageOverlook
 
-A modular Discord bot framework built on [discord.py](https://discordpy.readthedocs.io/), designed for self-hosting on Ubuntu servers. Install once, manage everything from the terminal with `vmanage` or from Discord with `!vmanage`.
+A modular Discord bot framework built on [discord.py](https://discordpy.readthedocs.io/), designed for self-hosting on Ubuntu servers. Deploy once, manage everything from the terminal with `vmanage` or from Discord with `!vmanage`.
 
 ---
 
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Quick Install](#quick-install)
+2. [Manual Setup — AWS Ubuntu](#manual-setup--aws-ubuntu)
 3. [vmanage CLI](#vmanage-cli)
 4. [launcher.py CLI](#launcherpy-cli)
 5. [In-Discord Commands](#in-discord-commands)
@@ -24,58 +24,146 @@ A modular Discord bot framework built on [discord.py](https://discordpy.readthed
 ## Architecture Overview
 
 ```
-install.sh          One-shot Ubuntu installer (Python 3.13, venv, systemd service,
-                    vmanage CLI, Discord API owner detection)
 vmanage.py          Standalone system-wide CLI — zero venv dependency
 launcher.py         Bot-scoped CLI (start, setup, repos, cogs, system)
 core/
   bot.py            VantageBot — subclasses discord.ext.commands.Bot
-  config.py         data/config.json reader/writer
-  cog_manager.py    Repo registry + cog install tracker (data/cog_data.json)
-  guild_data.py     Per-guild JSON storage (data/guilds/{id}.json)
+  config.py         Config reader/writer with resolve_data_dir()
+  cog_manager.py    Repo registry + cog install tracker
+  guild_data.py     Per-guild JSON storage
   help_command.py   Paginated help with buttons and live search modal
 cogs/
   admin.py          Built-in always-loaded admin cog
-data/               Runtime data (gitignored)
-  config.json       Token, prefix, owner IDs, bot name, service name
-  cog_data.json     Repo/cog registry
-  repos/            Cloned GitHub repos (on sys.path at startup)
-  guilds/           Per-guild JSON files
-vantage.service     systemd unit template (patched by install.sh)
+vantage@.service    systemd template unit (multi-bot support)
 ```
+
+**Filesystem layout on the server:**
+
+| Path | Purpose |
+|------|---------|
+| `/opt/vantage/<BotName>/` | Git clone (code, venv) |
+| `/var/lib/vantage/<BotName>/` | Mutable data (config.json, cog_data.json, guild files, cloned repos) |
+| `/var/log/vantage/` | Log files (via journald) |
+| `/usr/local/bin/vmanage` | System-wide CLI (symlink or copy) |
+
+**Data directory resolution** (checked in order):
+1. `VANTAGE_DATA_DIR` environment variable
+2. `/var/lib/vantage/<BotName>/` when code is under `/opt/vantage/<BotName>/`
+3. `data/` relative to the project root (local development fallback)
 
 **Boot sequence:**
 1. `systemd` starts `launcher.py start` as the `vantage` user
-2. `load_config()` reads `data/config.json`
+2. `load_config()` reads `<data_dir>/config.json`
 3. `VantageBot.__init__` sets up intents, owner IDs, prefix, and the custom help command
-4. `setup_hook()` — adds `data/repos/` to `sys.path`, loads `cogs.admin`, then autoloads all cogs listed in `cog_data.json → autoload`
+4. `setup_hook()` — adds `<data_dir>/repos/` to `sys.path`, loads `cogs.admin`, then autoloads all cogs listed in `cog_data.json → autoload`
 5. `on_ready()` — sets `start_time`, updates bot presence
 
 ---
 
-## Quick Install
+## Manual Setup — AWS Ubuntu
+
+These steps assume a fresh Ubuntu 22.04+ EC2 instance. Run all commands as root (or with sudo) unless stated otherwise.
+
+### 1. Install system dependencies
 
 ```bash
-# One-liner (Ubuntu 22.04+)
-curl -sSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh | sudo bash
-
-# Or manually
-git clone https://github.com/BigPattyOG/VantageOverlook.git
-cd VantageOverlook
-sudo ./install.sh
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git python3 python3-pip python3-venv build-essential
 ```
 
-The installer:
-1. Installs Python 3.13 via deadsnakes PPA + git + build tools
-2. Creates a `vantage` system user at `/opt/vantage`
-3. Clones the repo to `/opt/vantage/<BotName>/`
-4. Creates a Python venv and installs all dependencies
-5. Calls `GET /oauth2/applications/@me` via the Discord API to auto-detect owner IDs
-6. Writes `data/config.json` (with Override / Update / Keep if it already exists)
-7. Installs a systemd service as `vantage-<botname>.service`
-8. Writes a sudoers entry so the bot user can restart its own service
-9. Starts the service immediately
-10. Installs `vmanage` to `/usr/local/bin/vmanage`
+### 2. Create the bot user
+
+```bash
+sudo useradd --system --shell /bin/bash \
+    --home-dir /opt/vantage --create-home vantage
+```
+
+### 3. Clone the repository
+
+```bash
+sudo mkdir -p /opt/vantage
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git \
+    /opt/vantage/MyBot
+sudo chown -R vantage:vantage /opt/vantage/MyBot
+```
+
+Replace `MyBot` with your preferred bot name (used for the service instance and data directory).
+
+### 4. Create the Python virtual environment
+
+```bash
+sudo -u vantage bash -c "
+    cd /opt/vantage/MyBot
+    python3 -m venv venv
+    venv/bin/pip install --upgrade pip
+    venv/bin/pip install -r requirements.txt
+"
+```
+
+### 5. Create the data directory
+
+```bash
+sudo mkdir -p /var/lib/vantage/MyBot
+sudo chown -R vantage:vantage /var/lib/vantage/MyBot
+sudo chmod 750 /var/lib/vantage/MyBot
+```
+
+### 6. Configure the bot
+
+Run the interactive setup wizard as the `vantage` user:
+
+```bash
+sudo -u vantage bash -c "
+    cd /opt/vantage/MyBot
+    VANTAGE_DATA_DIR=/var/lib/vantage/MyBot venv/bin/python launcher.py setup
+"
+```
+
+This writes `/var/lib/vantage/MyBot/config.json` with your token, prefix, and owner IDs.
+
+Lock down the config file:
+
+```bash
+sudo chmod 600 /var/lib/vantage/MyBot/config.json
+```
+
+### 7. Install the systemd service
+
+```bash
+sudo cp /opt/vantage/MyBot/vantage@.service \
+    /etc/systemd/system/vantage@.service
+sudo systemctl daemon-reload
+sudo systemctl enable vantage@MyBot
+sudo systemctl start  vantage@MyBot
+```
+
+Check service status:
+
+```bash
+sudo systemctl status vantage@MyBot
+sudo journalctl -u vantage@MyBot -f
+```
+
+### 8. Install vmanage system-wide
+
+```bash
+sudo ln -sf /opt/vantage/MyBot/vmanage.py /usr/local/bin/vmanage
+sudo chmod +x /usr/local/bin/vmanage
+```
+
+Now any user can run `vmanage MyBot --status`.
+
+### 9. Optional — sudoers entry for Discord management panel
+
+The `!vmanage` Discord panel uses `sudo systemctl` to restart/stop the bot. Add a sudoers entry so this works without a password:
+
+```bash
+echo "vantage ALL=(ALL) NOPASSWD: /bin/systemctl restart vantage@MyBot, \
+    /bin/systemctl stop vantage@MyBot, \
+    /bin/systemctl start vantage@MyBot" \
+    | sudo tee /etc/sudoers.d/vantage-mybot
+sudo chmod 440 /etc/sudoers.d/vantage-mybot
+```
 
 ---
 
@@ -100,7 +188,7 @@ vmanage MyBot --repos           # list cog repositories
 vmanage MyBot --debug           # show debug resolution info
 ```
 
-Bot discovery: scans `/opt/vantage/` for subdirectories that contain `data/config.json`. Name matching is case-insensitive and supports prefix matching (`vmanage my` matches `MyBot` if unambiguous).
+Bot discovery: scans `/opt/vantage/` for subdirectories. Name matching is case-insensitive and supports prefix matching (`vmanage my` matches `MyBot` if unambiguous).
 
 ---
 
@@ -129,7 +217,7 @@ python launcher.py cogs autoload <COG_PATH>  # toggle autoload on/off
 # System setup (require root)
 sudo python launcher.py system status
 sudo python launcher.py system create-user [--username NAME] [--home PATH]
-sudo python launcher.py system install-service [--user USER] [--install-dir PATH]
+sudo python launcher.py system install-service [--user USER] [--bot-name NAME]
 ```
 
 ---
@@ -160,13 +248,13 @@ All commands use the configured prefix (default `!`).  Bot mention also works (`
 | `!cogs` | List all loaded extensions |
 | `!shutdown` | Graceful shutdown (will not auto-restart unless systemd does it) |
 
-The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry created by `install.sh` allows this without a password.
+The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry from step 9 allows this without a password.
 
 ---
 
 ## Configuration
 
-**`data/config.json`** (permissions: `600`):
+**`/var/lib/vantage/<BotName>/config.json`** (permissions: `600`):
 
 ```json
 {
@@ -181,7 +269,8 @@ The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry cre
 }
 ```
 
-- `name` / `service_name` are written by `install.sh` and used by `vmanage` + the `!vmanage` Discord command
+- `name` — used by `vmanage` + the `!vmanage` Discord command
+- `service_name` — systemd unit name suffix (e.g. `vantage-mybot`)
 - `activity` supports the `{prefix}` template token
 - Reload with `!reload cogs.admin` (for prefix changes) or restart the service
 
@@ -199,14 +288,14 @@ The `!vmanage` panel calls `sudo systemctl` on the server; the sudoers entry cre
 
 ## Cog System
 
-Cogs are Python extensions.  The loader (`CogManager`) stores state in `data/cog_data.json`.
+Cogs are Python extensions.  The loader (`CogManager`) stores state in `<data_dir>/cog_data.json`.
 
 ### Module resolution
 
-`data/repos/` is inserted into `sys.path` at bot startup.  This means:
+`<data_dir>/repos/` is inserted into `sys.path` at bot startup.  This means:
 
 ```
-data/repos/
+/var/lib/vantage/MyBot/repos/
   my_cogs/
     greet.py          → importable as  my_cogs.greet
     welcome/
@@ -229,7 +318,7 @@ python launcher.py cogs autoload my_cogs.greet
 python launcher.py repos add /home/user/my-cogs --name my_cogs
 ```
 
-This creates a symlink at `data/repos/my_cogs → /home/user/my-cogs`.
+This creates a symlink at `<data_dir>/repos/my_cogs → /home/user/my-cogs`.
 
 ### Autoload
 
@@ -258,18 +347,17 @@ set_guild_value(ctx.guild.id, "muted_role", role.id)
 role_id = get_guild_value(ctx.guild.id, "muted_role")
 ```
 
-Files live at `data/guilds/{guild_id}.json`.
+Files live at `<data_dir>/guilds/{guild_id}.json`.
 
 ---
 
 ## Project Structure
 
 ```
-VantageOverlook/
+VantageOverlook/                  → /opt/vantage/MyBot/  (git clone)
 ├── vmanage.py           System-wide CLI management tool
 ├── launcher.py          Bot-scoped CLI (start, setup, repos, cogs, system)
-├── install.sh           Ubuntu one-shot installer
-├── vantage.service      systemd unit template
+├── vantage@.service     systemd template unit (multi-bot support via %i)
 ├── requirements.txt     Python dependencies
 ├── .env.example         Environment variable template
 ├── README.md            This file
@@ -278,26 +366,26 @@ VantageOverlook/
 │
 ├── core/
 │   ├── bot.py           VantageBot class
-│   ├── config.py        data/config.json helpers
+│   ├── config.py        Config helpers + resolve_data_dir()
 │   ├── cog_manager.py   Repo + cog registry
 │   ├── guild_data.py    Per-guild JSON storage
 │   └── help_command.py  Paginated help with Discord UI
 │
-├── cogs/
-│   └── admin.py         Built-in admin cog (always loaded)
-│
-└── data/                Runtime data (gitignored)
-    ├── config.json
-    ├── cog_data.json
-    ├── repos/
-    └── guilds/
+└── cogs/
+    └── admin.py         Built-in admin cog (always loaded)
+
+/var/lib/vantage/MyBot/           (mutable data — gitignored)
+├── config.json
+├── cog_data.json
+├── repos/
+└── guilds/
 ```
 
 ---
 
 ## Service Management
 
-The systemd service is named `vantage-<botname>` (e.g. `vantage-mybot`).
+The systemd service is a template unit `vantage@.service`. Each bot runs as its own instance:
 
 ```bash
 # Using vmanage (recommended)
@@ -306,12 +394,12 @@ vmanage MyBot --logs
 vmanage MyBot --status
 
 # Direct systemctl
-sudo systemctl start   vantage-mybot
-sudo systemctl stop    vantage-mybot
-sudo systemctl restart vantage-mybot
-sudo systemctl status  vantage-mybot
-sudo journalctl -u vantage-mybot -f        # live logs
-sudo journalctl -u vantage-mybot -n 100    # last 100 lines
+sudo systemctl start   vantage@MyBot
+sudo systemctl stop    vantage@MyBot
+sudo systemctl restart vantage@MyBot
+sudo systemctl status  vantage@MyBot
+sudo journalctl -u vantage@MyBot -f        # live logs
+sudo journalctl -u vantage@MyBot -n 100    # last 100 lines
 ```
 
 ---
@@ -332,7 +420,7 @@ class Greet(commands.Cog):
     @commands.command()
     async def hello(self, ctx):
         """Say hello!"""
-        await ctx.send(f"Hello, {ctx.author.mention}! 👋")
+        await ctx.send(f"Hello, {ctx.author.mention}!")
 
 async def setup(bot):
     await bot.add_cog(Greet(bot))
@@ -342,14 +430,20 @@ async def setup(bot):
 
 ## Multi-Bot Setup
 
-Run multiple independent Vantage instances on one server:
+Run multiple independent Vantage instances on one server using the `vantage@.service` template:
 
 ```bash
-# Install bot 1
-sudo ./install.sh        # name it "Alpha" → /opt/vantage/Alpha, service vantage-alpha
+# Clone bot 1 to /opt/vantage/Alpha
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vantage/Alpha
+sudo mkdir -p /var/lib/vantage/Alpha
+# ... follow steps 4-6 for Alpha ...
+sudo systemctl enable --now vantage@Alpha
 
-# Install bot 2
-sudo ./install.sh        # name it "Beta"  → /opt/vantage/Beta,  service vantage-beta
+# Clone bot 2 to /opt/vantage/Beta
+sudo git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vantage/Beta
+sudo mkdir -p /var/lib/vantage/Beta
+# ... follow steps 4-6 for Beta ...
+sudo systemctl enable --now vantage@Beta
 
 # Manage them independently
 vmanage Alpha --restart
@@ -357,5 +451,5 @@ vmanage Beta  --logs
 vmanage                  # shows both with status
 ```
 
-Each installation has its own venv, config, cog registry, and guild data.  The `!vmanage` Discord command filters by the bot's configured `name` field, so `!vmanage Alpha` only responds from the Alpha bot.
+Each installation has its own venv, config, cog registry, and guild data. The `!vmanage` Discord command filters by the bot's configured `name` field, so `!vmanage Alpha` only responds from the Alpha bot.
 

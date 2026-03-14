@@ -41,7 +41,7 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from core.config import CONFIG_PATH, load_config, save_config
+from core.config import CONFIG_PATH, DATA_DIR, load_config, save_config
 from core.cog_manager import CogManager
 
 
@@ -84,14 +84,14 @@ def start(ctx: click.Context) -> None:
 
     if not token:
         click.echo(
-            click.style("❌  No bot token found.", fg="red")
+            click.style("No bot token found.", fg="red")
             + "\n\nRun "
             + click.style("python launcher.py setup", bold=True)
             + " to configure the bot."
         )
         sys.exit(1)
 
-    click.echo(click.style("🚀  Starting Vantage Bot…", fg="green"))
+    click.echo(click.style("Starting Vantage Bot...", fg="green"))
     bot = VantageBot(config)
 
     async def _run() -> None:
@@ -101,7 +101,7 @@ def start(ctx: click.Context) -> None:
     try:
         asyncio.run(_run())
     except KeyboardInterrupt:
-        click.echo(click.style("\n👋  Bot stopped.", fg="yellow"))
+        click.echo(click.style("\nBot stopped.", fg="yellow"))
 
 
 # ── setup ─────────────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def start(ctx: click.Context) -> None:
 @cli.command()
 def setup() -> None:
     """Interactive first-run setup wizard."""
-    click.echo(click.style("\n🔧  Vantage Bot — Setup Wizard\n", bold=True, fg="cyan"))
+    click.echo(click.style("\nVantage Bot — Setup Wizard\n", bold=True, fg="cyan"))
 
     config = load_config()
 
@@ -168,7 +168,7 @@ def setup() -> None:
     save_config(config)
 
     click.echo(
-        click.style("\n✅  Config saved to ", fg="green")
+        click.style("\nConfig saved to ", fg="green")
         + click.style(str(CONFIG_PATH), bold=True)
     )
     click.echo(
@@ -198,7 +198,7 @@ def repos_list() -> None:
         click.echo("Add a local repo:   " + click.style("python launcher.py repos add <PATH>", bold=True))
         return
 
-    click.echo(click.style(f"\n📦  Repositories ({len(data)})\n", bold=True))
+    click.echo(click.style(f"\nRepositories ({len(data)})\n", bold=True))
     for name, info in data.items():
         tag = (
             click.style("[local]", fg="blue")
@@ -226,20 +226,20 @@ def repos_add(url_or_path: str, name: str | None) -> None:
         repo_name = _normalize_module_name(name or path.name)
         try:
             mgr.add_local_repo(repo_name, str(path.resolve()))
-            click.echo(click.style(f"✅  Local repo '{repo_name}' added.", fg="green"))
+            click.echo(click.style(f"Local repo '{repo_name}' added.", fg="green"))
             click.echo(f"   Path: {path.resolve()}")
         except ValueError as exc:
-            click.echo(click.style(f"❌  {exc}", fg="red"))
+            click.echo(click.style(f"{exc}", fg="red"))
     else:
         # GitHub URL
         url = url_or_path
         repo_name = _normalize_module_name(name or _name_from_url(url))
-        click.echo(f"⬇️   Cloning {url} as '{repo_name}'…")
+        click.echo(f"Cloning {url} as '{repo_name}'...")
         try:
             dest = mgr.add_github_repo(repo_name, url)
-            click.echo(click.style(f"✅  Repo '{repo_name}' cloned to {dest}", fg="green"))
+            click.echo(click.style(f"Repo '{repo_name}' cloned to {dest}", fg="green"))
         except Exception as exc:
-            click.echo(click.style(f"❌  Failed to clone: {exc}", fg="red"))
+            click.echo(click.style(f"Failed to clone: {exc}", fg="red"))
 
 
 @repos.command("remove")
@@ -250,7 +250,7 @@ def repos_remove(name: str, yes: bool) -> None:
     mgr = CogManager()
 
     if name not in mgr.list_repos():
-        click.echo(click.style(f"❌  Repo '{name}' not found.", fg="red"))
+        click.echo(click.style(f"Repo '{name}' not found.", fg="red"))
         return
 
     if not yes:
@@ -259,7 +259,7 @@ def repos_remove(name: str, yes: bool) -> None:
         )
 
     mgr.remove_repo(name)
-    click.echo(click.style(f"✅  Repo '{name}' removed.", fg="green"))
+    click.echo(click.style(f"Repo '{name}' removed.", fg="green"))
 
 
 @repos.command("update")
@@ -280,12 +280,12 @@ def repos_update(name: str | None) -> None:
         return
 
     for rname in targets:
-        click.echo(f"⬆️   Updating '{rname}'…")
+        click.echo(f"Updating '{rname}'...")
         try:
             mgr.update_github_repo(rname)
-            click.echo(click.style(f"  ✅  '{rname}' updated.", fg="green"))
+            click.echo(click.style(f"  '{rname}' updated.", fg="green"))
         except Exception as exc:
-            click.echo(click.style(f"  ❌  Failed: {exc}", fg="red"))
+            click.echo(click.style(f"  Failed: {exc}", fg="red"))
 
 
 # ── cogs ──────────────────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ def cogs_list() -> None:
         click.echo("Install one with: " + click.style("python launcher.py cogs install <repo> <cog>", bold=True))
         return
 
-    click.echo(click.style(f"\n🧩  Installed Cogs ({len(installed)})\n", bold=True))
+    click.echo(click.style(f"\nInstalled Cogs ({len(installed)})\n", bold=True))
     for cog_path in sorted(installed):
         flag = click.style(" [autoload]", fg="green") if cog_path in autoload else ""
         click.echo(f"  {click.style(cog_path, bold=True)}{flag}")
@@ -328,13 +328,13 @@ def cogs_install(repo: str, cog: str) -> None:
     mgr = CogManager()
     try:
         cog_path = mgr.install_cog(repo, cog)
-        click.echo(click.style(f"✅  '{cog}' installed as '{cog_path}'.", fg="green"))
+        click.echo(click.style(f"'{cog}' installed as '{cog_path}'.", fg="green"))
         click.echo(
             "\nEnable autoload: "
             + click.style(f"python launcher.py cogs autoload {cog_path}", bold=True)
         )
     except (ValueError, FileNotFoundError) as exc:
-        click.echo(click.style(f"❌  {exc}", fg="red"))
+        click.echo(click.style(f"{exc}", fg="red"))
 
 
 @cogs.command("uninstall")
@@ -344,9 +344,9 @@ def cogs_uninstall(cog_path: str) -> None:
     mgr = CogManager()
     try:
         mgr.uninstall_cog(cog_path)
-        click.echo(click.style(f"✅  '{cog_path}' uninstalled.", fg="green"))
+        click.echo(click.style(f"'{cog_path}' uninstalled.", fg="green"))
     except ValueError as exc:
-        click.echo(click.style(f"❌  {exc}", fg="red"))
+        click.echo(click.style(f"{exc}", fg="red"))
 
 
 @cogs.command("autoload")
@@ -357,19 +357,19 @@ def cogs_autoload(cog_path: str) -> None:
     try:
         enabled = mgr.toggle_autoload(cog_path)
         if enabled:
-            click.echo(click.style(f"✅  '{cog_path}' will autoload on bot start.", fg="green"))
+            click.echo(click.style(f"'{cog_path}' will autoload on bot start.", fg="green"))
         else:
-            click.echo(click.style(f"✅  '{cog_path}' will NOT autoload on bot start.", fg="yellow"))
+            click.echo(click.style(f"'{cog_path}' will NOT autoload on bot start.", fg="yellow"))
     except ValueError as exc:
-        click.echo(click.style(f"❌  {exc}", fg="red"))
+        click.echo(click.style(f"{exc}", fg="red"))
 
 
 # ── system ────────────────────────────────────────────────────────────────────
 
 _BOT_USER = "vantage"
-_INSTALL_DIR = Path("/opt/vantage/VantageOverlook")
-_SERVICE_SRC = Path(__file__).resolve().parent / "vantage.service"
-_SERVICE_DEST = Path("/etc/systemd/system/vantage.service")
+_INSTALL_DIR = Path("/opt/vantage")
+_SERVICE_SRC = Path(__file__).resolve().parent / "vantage@.service"
+_SERVICE_DEST = Path("/etc/systemd/system/vantage@.service")
 
 
 @cli.group()
@@ -383,7 +383,7 @@ def system() -> None:
 @system.command("status")
 def system_status() -> None:
     """Show system readiness: Linux user, service, config, and data directory."""
-    click.echo(click.style("\n🔍  Vantage System Status\n", bold=True))
+    click.echo(click.style("\nVantage System Status\n", bold=True))
 
     # 1 — Linux user
     user_ok = _user_exists(_BOT_USER)
@@ -395,33 +395,40 @@ def system_status() -> None:
     dir_ok = _INSTALL_DIR.exists()
     _status_line(f"Install directory ({_INSTALL_DIR})", dir_ok,
                  ok_detail="exists",
-                 fail_detail="not found (run install.sh or deploy manually)")
+                 fail_detail="not found — deploy manually (see README.md)")
 
     # 3 — systemd service file
     svc_ok = _SERVICE_DEST.exists()
-    _status_line("systemd service file", svc_ok,
+    _status_line("systemd service template", svc_ok,
                  ok_detail=str(_SERVICE_DEST),
                  fail_detail=f"not installed — run: sudo python launcher.py system install-service")
 
     # 4 — service enabled/running
     if shutil.which("systemctl"):
+        # With the template unit (vantage@.service) we check the instance name from config
+        from core.config import load_config as _lc
+        try:
+            _cfg = _lc()
+            _svc_name = f"vantage@{_cfg.get('name', 'vantage')}"
+        except Exception:
+            _svc_name = "vantage@vantage"
         enabled = subprocess.run(
-            ["systemctl", "is-enabled", "vantage"], capture_output=True, text=True
+            ["systemctl", "is-enabled", _svc_name], capture_output=True, text=True
         ).returncode == 0
         running = subprocess.run(
-            ["systemctl", "is-active", "vantage"], capture_output=True, text=True
+            ["systemctl", "is-active", _svc_name], capture_output=True, text=True
         ).returncode == 0
-        _status_line("systemd service enabled", enabled,
+        _status_line(f"systemd service enabled ({_svc_name})", enabled,
                      ok_detail="yes", fail_detail="no")
-        _status_line("systemd service running", running,
-                     ok_detail="yes", fail_detail="no — run: sudo systemctl start vantage")
+        _status_line(f"systemd service running ({_svc_name})", running,
+                     ok_detail="yes", fail_detail=f"no — run: sudo systemctl start {_svc_name}")
     else:
-        click.echo("  " + click.style("⚠ ", fg="yellow") + "systemctl not found — not running on systemd")
+        click.echo("  " + click.style("[WARN]", fg="yellow") + " systemctl not found — not running on systemd")
 
     # 5 — config
     from core.config import CONFIG_PATH
     cfg_ok = CONFIG_PATH.exists()
-    _status_line("Bot config (data/config.json)", cfg_ok,
+    _status_line(f"Bot config ({CONFIG_PATH})", cfg_ok,
                  ok_detail="found",
                  fail_detail="missing — run: python launcher.py setup")
 
@@ -447,24 +454,24 @@ def system_create_user(username: str, home: str) -> None:
     Requires root (sudo).
 
     The user is created as a system account with a home directory at
-    /opt/vantage (by default). Bot data, the virtual environment, and
-    cloned cog repos all live inside this home directory.
+    /opt/vantage (by default). The virtual environment and code clone
+    live inside this home directory; mutable data lives in /var/lib/vantage/.
 
     Example:
         sudo python launcher.py system create-user
     """
     if os.geteuid() != 0:
-        click.echo(click.style("❌  This command must be run as root.", fg="red"))
+        click.echo(click.style("This command must be run as root.", fg="red"))
         click.echo("     Try: " + click.style(f"sudo python launcher.py system create-user", bold=True))
         sys.exit(1)
 
     if _user_exists(username):
-        click.echo(click.style(f"✅  User '{username}' already exists.", fg="green"))
+        click.echo(click.style(f"User '{username}' already exists.", fg="green"))
         _print_user_info(username)
         return
 
     home_path = Path(home)
-    click.echo(click.style(f"\n👤  Creating system user '{username}'…\n", bold=True))
+    click.echo(click.style(f"\nCreating system user '{username}'...\n", bold=True))
     click.echo(f"   Username  : {username}")
     click.echo(f"   Home dir  : {home_path / username}")
     click.echo(f"   Shell     : /bin/bash")
@@ -483,76 +490,97 @@ def system_create_user(username: str, home: str) -> None:
             ],
             check=True,
         )
-        click.echo(click.style(f"✅  User '{username}' created successfully.", fg="green"))
+        click.echo(click.style(f"User '{username}' created successfully.", fg="green"))
         _print_user_info(username)
     except subprocess.CalledProcessError as exc:
-        click.echo(click.style(f"❌  Failed to create user: {exc}", fg="red"))
+        click.echo(click.style(f"Failed to create user: {exc}", fg="red"))
         sys.exit(1)
 
 
 @system.command("install-service")
 @click.option("--user", default=_BOT_USER, show_default=True,
               help="Linux user the service will run as.")
+@click.option("--bot-name", "bot_name", default=None,
+              help="Bot instance name (used for the service instance and data dir).")
 @click.option("--install-dir", "install_dir", default=str(_INSTALL_DIR), show_default=True,
-              help="Absolute path to the VantageOverlook directory.")
-def system_install_service(user: str, install_dir: str) -> None:
-    """Install (or update) the vantage systemd service.
+              help="Base install directory (default: /opt/vantage). Bot code lives at <install-dir>/<BotName>/.")
+def system_install_service(user: str, bot_name: str | None, install_dir: str) -> None:
+    """Install (or update) the vantage@ template systemd service.
 
     Requires root (sudo).
 
-    Copies vantage.service into /etc/systemd/system/, patches the User,
-    WorkingDirectory, and ExecStart paths, then enables the service so it
-    starts automatically on boot.
+    Copies vantage@.service into /etc/systemd/system/, patches the User field,
+    then enables the instance for this bot so it starts automatically on boot.
+
+    The service uses the split-path layout:
+      - Code:  /opt/vantage/<BotName>/
+      - Data:  /var/lib/vantage/<BotName>/   (via VANTAGE_DATA_DIR env var)
+      - Logs:  journald (view with journalctl -u vantage@<BotName>)
 
     Example:
-        sudo python launcher.py system install-service
-        sudo systemctl start vantage
+        sudo python launcher.py system install-service --bot-name MyBot
+        sudo systemctl start vantage@MyBot
     """
     if os.geteuid() != 0:
-        click.echo(click.style("❌  This command must be run as root.", fg="red"))
+        click.echo(click.style("This command must be run as root.", fg="red"))
         click.echo("     Try: " + click.style("sudo python launcher.py system install-service", bold=True))
         sys.exit(1)
 
     if not _SERVICE_SRC.exists():
-        click.echo(click.style(f"❌  Service template not found: {_SERVICE_SRC}", fg="red"))
+        click.echo(click.style(f"Service template not found: {_SERVICE_SRC}", fg="red"))
         sys.exit(1)
 
     install_path = Path(install_dir)
-    venv_python = install_path / "venv" / "bin" / "python"
 
-    click.echo(click.style("\n⚙️   Installing systemd service…\n", bold=True))
-    click.echo(f"   Service file  : {_SERVICE_DEST}")
+    # Determine bot name for the instance
+    if not bot_name:
+        try:
+            from core.config import load_config as _lc
+            bot_name = _lc().get("name", install_path.name)
+        except Exception:
+            bot_name = install_path.name
+
+    data_dir = Path("/var/lib/vantage") / bot_name
+    working_dir = install_path / bot_name
+    venv_python = working_dir / "venv" / "bin" / "python"
+    instance_svc = f"vantage@{bot_name}"
+
+    click.echo(click.style("\nInstalling systemd service...\n", bold=True))
+    click.echo(f"   Template file : {_SERVICE_DEST}")
+    click.echo(f"   Instance      : {instance_svc}")
     click.echo(f"   Run as user   : {user}")
-    click.echo(f"   Working dir   : {install_path}")
+    click.echo(f"   Working dir   : {working_dir}")
+    click.echo(f"   Data dir      : {data_dir}")
     click.echo(f"   Python        : {venv_python}\n")
 
-    # Read the template, patch the three fields
+    # Read the template and only patch the User= field.
+    # WorkingDirectory, ExecStart, and Environment already use %i placeholders
+    # in the template file and need no further patching.
     content = _SERVICE_SRC.read_text(encoding="utf-8")
     patched_lines = []
     for line in content.splitlines():
         if line.startswith("User="):
             patched_lines.append(f"User={user}")
-        elif line.startswith("WorkingDirectory="):
-            patched_lines.append(f"WorkingDirectory={install_path}")
-        elif line.startswith("ExecStart="):
-            patched_lines.append(f"ExecStart={venv_python} launcher.py start")
         else:
             patched_lines.append(line)
 
     _SERVICE_DEST.write_text("\n".join(patched_lines) + "\n", encoding="utf-8")
 
+    # Create the data directory if it doesn't exist
+    data_dir.mkdir(parents=True, exist_ok=True)
+
     try:
         subprocess.run(["systemctl", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "enable", "vantage"], check=True)
-        click.echo(click.style("✅  Service installed and enabled.", fg="green"))
+        subprocess.run(["systemctl", "enable", instance_svc], check=True)
+        click.echo(click.style(f"Service {instance_svc} installed and enabled.", fg="green"))
         click.echo("\nStart the bot now with:")
-        click.echo("  " + click.style("sudo systemctl start vantage", bold=True))
+        click.echo("  " + click.style(f"sudo systemctl start {instance_svc}", bold=True))
         click.echo("Watch the logs:")
-        click.echo("  " + click.style("sudo journalctl -u vantage -f", bold=True))
+        click.echo("  " + click.style(f"sudo journalctl -u {instance_svc} -f", bold=True))
     except FileNotFoundError:
-        click.echo(click.style("⚠  systemctl not found — are you on a systemd system?", fg="yellow"))
+        click.echo(click.style("systemctl not found — are you on a systemd system?", fg="yellow"))
     except subprocess.CalledProcessError as exc:
-        click.echo(click.style(f"❌  systemctl error: {exc}", fg="red"))
+        click.echo(click.style(f"systemctl error: {exc}", fg="red"))
         sys.exit(1)
 
 
@@ -584,7 +612,7 @@ def _print_user_info(username: str) -> None:
 
 
 def _status_line(label: str, ok: bool, ok_detail: str = "", fail_detail: str = "") -> None:
-    icon = click.style("✅", fg="green") if ok else click.style("❌", fg="red")
+    icon = click.style("[OK]", fg="green") if ok else click.style("[FAIL]", fg="red")
     detail = ok_detail if ok else click.style(fail_detail, fg="yellow")
     click.echo(f"  {icon}  {label}" + (f" — {detail}" if detail else ""))
 
