@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional
 # ── constants ──────────────────────────────────────────────────────────────────
 
 INSTALL_BASE = Path("/opt")
-BOT_USER = "vantage"
+BOT_USER = "vbot"
 VERSION = "2.0.0"
 
 # ── colour helpers ─────────────────────────────────────────────────────────────

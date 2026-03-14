@@ -366,7 +366,7 @@ def cogs_autoload(cog_path: str) -> None:
 
 # ── system ────────────────────────────────────────────────────────────────────
 
-_BOT_USER = "vantage"
+_BOT_USER = "vbot"
 _INSTALL_DIR = Path("/opt")
 _SERVICE_SRC = Path(__file__).resolve().parent / "vantage@.service"
 _SERVICE_DEST = Path("/etc/systemd/system/vantage@.service")
@@ -449,7 +449,7 @@ def system_status() -> None:
 @click.option("--home", default="/opt", show_default=True,
               help="Home directory for the new user.")
 def system_create_user(username: str, home: str) -> None:
-    """Create the 'vantage' Linux system user for running the bot.
+    """Create the Linux system user for running the bot.
 
     Requires root (sudo).
 

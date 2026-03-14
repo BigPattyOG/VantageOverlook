@@ -52,7 +52,7 @@ vantage@.service    systemd template unit (multi-bot support)
 3. `data/` relative to the project root (local development fallback)
 
 **Boot sequence:**
-1. `systemd` starts `launcher.py start` as the `vantage` user
+1. `systemd` starts `launcher.py start` as the `vbot` user
 2. `load_config()` reads `<data_dir>/config.json`
 3. `VantageBot.__init__` sets up intents, owner IDs, prefix, and the custom help command
 4. `setup_hook()` — adds `<data_dir>/repos/` to `sys.path`, loads `cogs.admin`, then autoloads all cogs listed in `cog_data.json → autoload`
@@ -62,107 +62,130 @@ vantage@.service    systemd template unit (multi-bot support)
 
 ## Manual Setup — AWS Ubuntu
 
-These steps assume a fresh Ubuntu 22.04+ EC2 instance. Run all commands as root (or with sudo) unless stated otherwise.
+These steps assume a fresh Ubuntu 22.04+ EC2 instance. The example bot name is `vprod`; replace it with your preferred name throughout.
 
-### 1. Install system dependencies
+### Step 1 — Create group and user
+
+```bash
+# Group and user
+sudo groupadd vbots
+sudo useradd -r -s /usr/sbin/nologin -g vbots vbot
+```
+
+### Step 2 — Add human users to the group
+
+```bash
+# Add yourself and the other person
+sudo usermod -aG vbots yourname
+sudo usermod -aG vbots theirname
+
+# Log out and back in, then check
+groups yourname
+```
+
+### Step 3 — Create directories
+
+```bash
+sudo mkdir -p /opt/vprod
+sudo mkdir -p /var/lib/vprod
+sudo mkdir -p /var/log/vprod
+
+# Ownership
+sudo chown -R vbot:vbots /opt/vprod
+sudo chown -R vbot:vbots /var/lib/vprod
+sudo chown -R vbot:vbots /var/log/vprod
+
+# Permissions (SGID so new files inherit the group)
+sudo chmod 2775 /opt/vprod
+sudo chmod 2775 /var/lib/vprod
+sudo chmod 2775 /var/log/vprod
+```
+
+### Step 4 — Set umask (both of you)
+
+```bash
+echo 'umask 002' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Step 5 — Install system packages
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y git python3 python3-pip python3-venv build-essential
+sudo apt install -y python3 python3-pip python3-venv git
 ```
 
-### 2. Create the bot user
+### Step 6 — Clone the repository
 
 ```bash
-sudo useradd --system --shell /bin/bash \
-    --home-dir /opt --create-home vantage
+sudo -u vbot git clone https://github.com/BigPattyOG/VantageOverlook.git /opt/vprod
 ```
 
-### 3. Clone the repository
+### Step 7 — Create the Python virtual environment
 
 ```bash
-sudo mkdir -p /opt/MyBot
-sudo git clone https://github.com/BigPattyOG/VantageOverlook.git \
-    /opt/MyBot
-sudo chown -R vantage:vantage /opt/MyBot
-```
-
-Replace `MyBot` with your preferred bot name (used for the service instance and data directory).
-
-### 4. Create the Python virtual environment
-
-```bash
-sudo -u vantage bash -c "
-    cd /opt/MyBot
+sudo -u vbot bash -c "
+    cd /opt/vprod
     python3 -m venv venv
     venv/bin/pip install --upgrade pip
     venv/bin/pip install -r requirements.txt
 "
 ```
 
-### 5. Create the data directory
+### Step 8 — Data directory
+
+The `/var/lib/vprod` directory was already created with the correct ownership in Step 3 — nothing more to do here.
+
+### Step 9 — Run the setup wizard
 
 ```bash
-sudo mkdir -p /var/lib/MyBot
-sudo chown -R vantage:vantage /var/lib/MyBot
-sudo chmod 750 /var/lib/MyBot
-```
-
-### 6. Configure the bot
-
-Run the interactive setup wizard as the `vantage` user:
-
-```bash
-sudo -u vantage bash -c "
-    cd /opt/MyBot
-    VANTAGE_DATA_DIR=/var/lib/MyBot venv/bin/python launcher.py setup
+sudo -u vbot bash -c "
+    cd /opt/vprod
+    VANTAGE_DATA_DIR=/var/lib/vprod venv/bin/python launcher.py setup
 "
 ```
 
-This writes `/var/lib/MyBot/config.json` with your token, prefix, and owner IDs.
-
-Lock down the config file:
+This writes `/var/lib/vprod/config.json` with your token, prefix, and owner IDs. Lock it down after:
 
 ```bash
-sudo chmod 600 /var/lib/MyBot/config.json
+sudo chmod 600 /var/lib/vprod/config.json
 ```
 
-### 7. Install the systemd service
+### Step 10 — Install the systemd service
 
 ```bash
-sudo cp /opt/MyBot/vantage@.service \
-    /etc/systemd/system/vantage@.service
+sudo cp /opt/vprod/vantage@.service /etc/systemd/system/vantage@.service
 sudo systemctl daemon-reload
-sudo systemctl enable vantage@MyBot
-sudo systemctl start  vantage@MyBot
+sudo systemctl enable vantage@vprod
+sudo systemctl start  vantage@vprod
 ```
 
 Check service status:
 
 ```bash
-sudo systemctl status vantage@MyBot
-sudo journalctl -u vantage@MyBot -f
+sudo systemctl status vantage@vprod
+sudo journalctl -u vantage@vprod -f
 ```
 
-### 8. Install vmanage system-wide
+### Step 11 — Install vmanage system-wide
 
 ```bash
-sudo ln -sf /opt/MyBot/vmanage.py /usr/local/bin/vmanage
+sudo ln -sf /opt/vprod/vmanage.py /usr/local/bin/vmanage
 sudo chmod +x /usr/local/bin/vmanage
 ```
 
-Now any user can run `vmanage MyBot --status`.
+Now any user can run `vmanage vprod --status`.
 
-### 9. Optional — sudoers entry for Discord management panel
+### Step 12 — Optional: sudoers entry for Discord management panel
 
 The `!vmanage` Discord panel uses `sudo systemctl` to restart/stop the bot. Add a sudoers entry so this works without a password:
 
 ```bash
-echo "vantage ALL=(ALL) NOPASSWD: /bin/systemctl restart vantage@MyBot, \
-    /bin/systemctl stop vantage@MyBot, \
-    /bin/systemctl start vantage@MyBot" \
-    | sudo tee /etc/sudoers.d/vantage-mybot
-sudo chmod 440 /etc/sudoers.d/vantage-mybot
+echo "vbot ALL=(ALL) NOPASSWD: /bin/systemctl restart vantage@vprod, \
+    /bin/systemctl stop vantage@vprod, \
+    /bin/systemctl start vantage@vprod" \
+    | sudo tee /etc/sudoers.d/vantage-vprod
+sudo chmod 440 /etc/sudoers.d/vantage-vprod
 ```
 
 ---
@@ -194,7 +217,7 @@ Bot discovery: scans `/opt/` for subdirectories containing `launcher.py`. Name m
 
 ## launcher.py CLI
 
-Run as the bot user (`sudo -u vantage`) or from within the install directory:
+Run as the bot user (`sudo -u vbot`) or from within the install directory:
 
 ```bash
 # Bot lifecycle
