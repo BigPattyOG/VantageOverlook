@@ -16,7 +16,14 @@ EnvironmentFile=-/opt/vprod/.env
 Environment=VPROD_DATA_DIR=/var/lib/vprod
 ExecStart=/opt/vprod/venv/bin/python launcher.py start
 Restart=on-failure
-RestartSec=5
+# Wait 30 s before each restart attempt so a crash-loop can't spam Discord
+# with rapid reconnections (which caused Discord to reset the token).
+RestartSec=30
+# Allow at most 5 restarts within any 10-minute window; if exceeded systemd
+# stops trying and logs a rate-limit event.  Run `systemctl reset-failed vprod`
+# to clear the counter after you have fixed the underlying problem.
+StartLimitIntervalSec=600
+StartLimitBurst=5
 # Give the bot 30 seconds to shut down cleanly before systemd kills it
 TimeoutStopSec=30
 # Log to the journal — view with: journalctl -u vprod -f

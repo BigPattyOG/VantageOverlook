@@ -73,6 +73,12 @@ vprod.service       systemd service unit
 
 These steps assume a fresh Ubuntu 22.04+ EC2 instance. Run all commands as root (or with sudo) unless stated otherwise. For the full walkthrough including Discord portal, peer group setup, and detailed permission instructions, see **[SETUP.md](SETUP.md)**.
 
+> **Faster option**: use the one-command installer instead of the steps below:
+>
+> ```bash
+> sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh)
+> ```
+
 ### 1. Install system dependencies
 
 ```bash
