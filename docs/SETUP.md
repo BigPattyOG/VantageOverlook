@@ -52,7 +52,15 @@ The script will:
 
 ### Re-running after a token reset
 
-If Discord invalidates your token, just SSH back in and run the installer again. It detects an existing install, updates the code, and prompts for a new token:
+If Discord invalidates your token, the quickest fix is:
+
+```bash
+vmanage --update-token
+```
+
+This prompts for the new token (hidden input), validates it, writes it to `/var/lib/vprod/.env`, and restarts the bot automatically. No need to re-run the full installer.
+
+Alternatively, re-run the full installer (updates code too):
 
 ```bash
 sudo bash /opt/vprod/scripts/install-vprod.sh

@@ -16,8 +16,9 @@ Usage
     vmanage --logs                   Stream live logs  (Ctrl+C to stop)
     vmanage --logs --lines 50        Show last 50 log lines (non-streaming)
     vmanage --update                 git pull + pip upgrade + restart
+    vmanage --update-token           Update the Discord token in .env + restart
     vmanage --repos                  List plugin repositories
-    vmanage --plugins                   List installed plugins
+    vmanage --plugins                List installed plugins
     vmanage --debug                  Show verbose debug output
     vmanage --yes                    Skip confirmation prompts
 """
@@ -125,19 +126,24 @@ class BotInstance:
 
     def has_token(self) -> bool:
         """Return True if DISCORD_TOKEN is set in the .env file or environment."""
-        # Check .env file in install dir
-        env_file = INSTALL_DIR / ".env"
-        if env_file.exists():
-            try:
-                content = env_file.read_text(encoding="utf-8")
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line.startswith("DISCORD_TOKEN=") and len(line) > len("DISCORD_TOKEN="):
-                        val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        if val and not val.startswith("your_"):
-                            return True
-            except Exception:
-                pass
+        # Production layout: token is in DATA_DIR/.env (/var/lib/vprod/.env)
+        # Dev layout: token is in INSTALL_DIR/data/.env (./data/.env)
+        candidates = [
+            DATA_DIR / ".env",
+            INSTALL_DIR / "data" / ".env",
+        ]
+        for env_file in candidates:
+            if env_file.exists():
+                try:
+                    content = env_file.read_text(encoding="utf-8")
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line.startswith("DISCORD_TOKEN=") and len(line) > len("DISCORD_TOKEN="):
+                            val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            if val and not val.startswith("your_"):
+                                return True
+                except Exception:
+                    pass
         # Fall back to environment
         return bool(os.environ.get("DISCORD_TOKEN", "").strip())
 
@@ -354,6 +360,121 @@ def do_repos(bot: BotInstance, debug: bool = False) -> None:
     _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "repos", "list")
 
 
+def do_update_token(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
+    """Interactively update the Discord token in the .env file, then restart."""
+    import getpass
+    import shlex
+
+    # Determine which .env to update: production layout first, dev layout second.
+    prod_env = DATA_DIR / ".env"
+    dev_env = INSTALL_DIR / "data" / ".env"
+
+    if prod_env.exists():
+        env_file = prod_env
+        needs_sudo = True
+    elif dev_env.exists():
+        env_file = dev_env
+        needs_sudo = False
+    elif DATA_DIR.exists():
+        # Production data dir exists but .env not yet written
+        env_file = prod_env
+        needs_sudo = True
+    else:
+        # Fall back to dev layout
+        env_file = dev_env
+        needs_sudo = False
+
+    info(f"Token file: {bold(str(env_file))}")
+    print()
+
+    # Token format: three base64url segments separated by dots (same regex as install-vprod.sh)
+    _TOKEN_RE = re.compile(
+        r"^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$"
+    )
+
+    token = ""
+    while True:
+        try:
+            token = getpass.getpass("  Enter new DISCORD_TOKEN (input hidden): ")
+        except (KeyboardInterrupt, EOFError):
+            print()
+            info("Cancelled.")
+            return
+
+        token = token.strip()
+        if not token:
+            warn("Token cannot be empty. Try again.")
+            continue
+
+        if _TOKEN_RE.match(token):
+            break
+
+        warn("That doesn't look like a valid Discord bot token.")
+        warn("Expected format: <24+chars>.<6chars>.<27+chars>")
+        info("Get your token: https://discord.com/developers/applications")
+        try:
+            again = input("  Try again? [Y/n]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            info("Cancelled.")
+            return
+        if again in ("n", "no"):
+            info("Cancelled.")
+            return
+        print()
+
+    content = f"DISCORD_TOKEN={token}\n"
+
+    if needs_sudo:
+        # Write via stdin piped to `sudo tee` so the token never appears in
+        # the process argument list (visible to other users via `ps`).
+        safe_path = shlex.quote(str(env_file))
+        safe_user = shlex.quote(BOT_USER)
+        cmd = (
+            f"tee {safe_path} >/dev/null"
+            f" && chmod 600 {safe_path}"
+            f" && chown {safe_user}:{safe_user} {safe_path}"
+        )
+        r = subprocess.run(
+            ["sudo", "bash", "-c", cmd],
+            input=content,
+            text=True,
+        )
+        if r.returncode != 0:
+            die("Failed to write token file. Make sure you have sudo access.")
+    else:
+        # Dev layout — write directly (current user owns the file).
+        try:
+            env_file.parent.mkdir(parents=True, exist_ok=True)
+            env_file.write_text(content, encoding="utf-8")
+            env_file.chmod(0o600)
+        except Exception as exc:
+            die(f"Failed to write {env_file}: {exc}")
+
+    ok(f"Token updated in {bold(str(env_file))}  {dim('(permissions: 600)')}")
+    print()
+
+    # Offer to restart the service so the new token takes effect.
+    if shutil.which("systemctl"):
+        restart = True
+        if not yes:
+            try:
+                ans = input(
+                    f"  Restart {bold(bot.service_name)} now so the new token takes effect? [Y/n]: "
+                ).strip().lower()
+                restart = ans not in ("n", "no")
+            except (KeyboardInterrupt, EOFError):
+                print()
+                restart = False
+
+        if restart:
+            do_restart(bot, debug)
+        else:
+            info(f"Skipping restart. Run {bold('vmanage --restart')} when ready.")
+    else:
+        info("No systemd found — restart the bot process manually.")
+
+
 def do_plugins(bot: BotInstance, debug: bool = False) -> None:
     if not bot.has_venv():
         die("Virtual environment not found.")
@@ -431,7 +552,7 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     if bot.has_token():
         print(f"  {'Discord token':<18} {teal('set')}")
     else:
-        print(f"  {'Discord token':<18} {red('NOT SET')}  {dim('set DISCORD_TOKEN in /opt/vprod/.env')}")
+        print(f"  {'Discord token':<18} {red('NOT SET')}  {dim('run: vmanage --update-token')}")
 
     print()
 
@@ -446,7 +567,8 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
         ("Stream logs",      "vmanage --logs"),
         ("Last N lines",     "vmanage --logs --lines 50"),
         ("Update & restart", "vmanage --update"),
-        ("List plugins",        "vmanage --plugins"),
+        ("Update token",     "vmanage --update-token"),
+        ("List plugins",     "vmanage --plugins"),
         ("List repos",       "vmanage --repos"),
         ("Debug info",       "vmanage --debug"),
     ]
@@ -478,7 +600,8 @@ Examples:
   vmanage --logs --lines 100    Show last 100 lines, non-streaming
   vmanage --update              Pull latest code and restart
   vmanage --update --yes        Same, skip confirmation
-  vmanage --plugins                List installed plugins
+  vmanage --update-token        Change the Discord token and restart
+  vmanage --plugins             List installed plugins
   vmanage --repos               List plugin repositories
   vmanage --debug               Show verbose debug information
 """,
@@ -497,6 +620,8 @@ Examples:
                     help="Stream live logs (combine with --lines for non-streaming)")
     mx.add_argument("--update",  action="store_true",
                     help="git pull + pip upgrade + restart")
+    mx.add_argument("--update-token", action="store_true",
+                    help="Update the Discord token in .env and restart")
     mx.add_argument("--repos",   action="store_true", help="List plugin repositories")
     mx.add_argument("--plugins",    action="store_true", help="List installed plugins")
 
@@ -546,6 +671,8 @@ def main() -> None:
         do_logs(bot, lines=args.lines, debug=args.debug)
     elif args.update:
         do_update(bot, debug=args.debug, yes=args.yes)
+    elif args.update_token:
+        do_update_token(bot, debug=args.debug, yes=args.yes)
     elif args.repos:
         do_repos(bot, args.debug)
     elif args.plugins:

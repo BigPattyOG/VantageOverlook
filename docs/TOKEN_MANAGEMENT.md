@@ -67,13 +67,19 @@ The script prompts you interactively:
 
 ### Rotating after a Discord token reset
 
-**Option A — re-run the installer** (recommended):
+**Option A — `vmanage --update-token`** (recommended — fastest):
+```bash
+vmanage --update-token
+```
+Prompts for the new token (input hidden), validates the format, writes it to `/var/lib/vprod/.env`, and offers to restart the bot — all in one step. Sudo is used internally to write the file; the token is never exposed in process arguments.
+
+**Option B — re-run the installer**:
 ```bash
 sudo bash /opt/vprod/scripts/install-vprod.sh
 ```
 The script detects the existing install, updates the code, and prompts for a new token. When asked `Overwrite it with a new token?`, answer `y`.
 
-**Option B — edit the file directly**:
+**Option C — edit the file directly**:
 ```bash
 sudo -u vprodbot nano /var/lib/vprod/.env
 # Change DISCORD_TOKEN=old  →  DISCORD_TOKEN=new
@@ -81,7 +87,7 @@ sudo -u vprodbot nano /var/lib/vprod/.env
 sudo systemctl restart vprod
 ```
 
-**Option C — one-liner** (useful for scripting):
+**Option D — one-liner** (useful for scripting):
 ```bash
 sudo DISCORD_TOKEN=your_new_token bash /opt/vprod/scripts/install-vprod.sh
 ```
