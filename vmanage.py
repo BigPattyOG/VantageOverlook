@@ -216,6 +216,94 @@ class BotInstance:
         except Exception:
             return None
 
+    def bot_version(self) -> Optional[str]:
+        """Read the bot framework version from VERSION in the install directory."""
+        try:
+            return (self.install_dir / "VERSION").read_text(encoding="utf-8").strip()
+        except Exception:
+            return None
+
+    def active_since(self) -> Optional[str]:
+        """Return the service start time as a readable string (e.g. '2026-03-15 08:00:05 UTC')."""
+        if not shutil.which("systemctl"):
+            return None
+        r = self._systemctl(
+            "show", "-p", "ActiveEnterTimestamp", "--value", self.service_name
+        )
+        ts = r.stdout.strip()
+        if not ts or ts == "0":
+            return None
+        for fmt in ("%a %Y-%m-%d %H:%M:%S %Z", "%a %Y-%m-%d %H:%M:%S"):
+            try:
+                dt = datetime.datetime.strptime(ts, fmt).replace(
+                    tzinfo=datetime.timezone.utc
+                )
+                return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            except ValueError:
+                continue
+        return ts  # fallback: return raw string if parsing fails
+
+    def git_commit(self) -> Optional[str]:
+        """Return the short hash + subject of the current HEAD commit."""
+        if not shutil.which("git"):
+            return None
+        try:
+            r = subprocess.run(
+                ["git", "-C", str(self.install_dir), "log", "--oneline", "-1"],
+                capture_output=True, text=True, timeout=5,
+            )
+            return r.stdout.strip() or None
+        except Exception:
+            return None
+
+    def recent_errors(self, n: int = 3) -> List[tuple]:
+        """Return the last *n* error/critical lines from the service journal.
+
+        Each item is a ``(timestamp, message)`` tuple where both values are plain
+        strings already trimmed to fit the MOTD display width.
+        """
+        if not shutil.which("journalctl"):
+            return []
+        try:
+            r = subprocess.run(
+                [
+                    "journalctl", "-u", self.service_name,
+                    "-p", "err",          # err and above (crit, alert, emerg)
+                    "-n", str(n),
+                    "--no-pager",
+                    "-o", "short",        # "Mar 15 08:42:11 host unit[PID]: msg"
+                ],
+                capture_output=True, text=True, timeout=6,
+            )
+        except Exception:
+            return []
+
+        lines: List[tuple] = []
+        for raw in r.stdout.strip().splitlines():
+            raw = raw.strip()
+            if not raw or raw.startswith("--"):
+                # journalctl separator / "No entries" line
+                continue
+            # Format: "Mar 15 08:42:11 hostname unit[PID]: message"
+            # Split into at most 6 tokens: month day time host unit msg
+            parts = raw.split(None, 5)
+            if len(parts) >= 6:
+                ts  = " ".join(parts[:3])   # "Mar 15 08:42:11"  (15 chars)
+                msg = parts[5]
+            elif len(parts) >= 4:
+                ts  = " ".join(parts[:3])
+                msg = " ".join(parts[3:])
+            else:
+                ts  = ""
+                msg = raw
+            # Trim long messages to stay within display width (W=68).
+            # Layout per line: "  " (2) + ts (15) + "  " (2) + msg → max_msg = 68 - 19 = 49
+            max_msg = 49
+            if len(msg) > max_msg:
+                msg = msg[:max_msg - 1] + "…"
+            lines.append((ts, msg))
+        return lines
+
 
 def get_bot() -> BotInstance:
     """Return the single installed vprod bot instance."""
@@ -490,9 +578,10 @@ def do_plugins(bot: BotInstance, debug: bool = False) -> None:
 
 def do_motd(bot: BotInstance) -> None:
     """Print a rich status panel for display at SSH login (/etc/update-motd.d/)."""
-    W = 68
-    sep   = teal("━" * W)
-    hsep  = dim("─" * W)
+    W    = 68
+    sep  = teal("━" * W)
+    hsep = dim("─" * W)
+    LW   = 16   # label column width
 
     # ── Banner ────────────────────────────────────────────────────────────────
     print()
@@ -500,18 +589,24 @@ def do_motd(bot: BotInstance) -> None:
     for line in _BANNER_LINES:
         print(teal(bold(line)))
 
-    # bot name + vmanage version on the same line as the bottom of the banner
+    bot_ver  = bot.bot_version()
+    ver_str  = f"  {dim('v' + bot_ver)}" if bot_ver else ""
     print(
-        f"  {dim('Bot:')} {bold(bot.name)}"
+        f"  {dim('Bot:')} {bold(bot.name)}{ver_str}"
         f"   {dim('vmanage')} {dim(VERSION)}"
     )
     print(sep)
 
-    # ── Service status ────────────────────────────────────────────────────────
+    # ── Service ───────────────────────────────────────────────────────────────
+    print()
+    print(f"  {bold('Service')}")
+    print(f"  {hsep}")
+
     if shutil.which("systemctl"):
         running = bot.is_running()
         state   = bot.active_state()
         uptime  = bot.uptime() if running else None
+        since   = bot.active_since() if running else None
 
         if running:
             status_str = f"{teal('●')} {teal(bold('running'))}"
@@ -521,60 +616,88 @@ def do_motd(bot: BotInstance) -> None:
             status_str = f"{yellow('●')} {yellow(bold(state))}"
         else:
             status_str = f"{red('●')} {red(bold(state or 'stopped'))}"
+
+        print(f"  {'Status':<{LW}} {status_str}")
+        if since:
+            print(f"  {'Since':<{LW}} {dim(since)}")
     else:
-        status_str = dim("systemd unavailable")
+        print(f"  {'Status':<{LW}} {dim('systemd unavailable')}")
 
-    print()
-    print(f"  {bold('Service')}")
-    print(f"  {hsep}")
-    print(f"  {'Status':<16} {status_str}")
-    print(f"  {'Unit':<16} {dim(bot.service_name + '.service')}")
+    commit = bot.git_commit()
+    if commit:
+        # Trim to fit: "  <label>  <hash> <msg>" — hash is ~7 chars, rest is subject
+        max_commit = W - LW - 4
+        display_commit = commit if len(commit) <= max_commit else commit[:max_commit - 1] + "…"
+        print(f"  {'Commit':<{LW}} {dim(display_commit)}")
+
+    print(f"  {'Unit':<{LW}} {dim(bot.service_name + '.service')}")
     print()
 
-    # ── Configuration ─────────────────────────────────────────────────────────
-    print(f"  {bold('Configuration')}")
+    # ── Bot configuration ─────────────────────────────────────────────────────
+    print(f"  {bold('Bot')}")
     print(f"  {hsep}")
 
     description = bot.config.get("description", "")
     if description:
-        print(f"  {'Description':<16} {dim(description)}")
+        print(f"  {'Description':<{LW}} {dim(description)}")
 
-    owners = bot.config.get("owner_ids", [])
+    activity = bot.config.get("activity", "")
+    if activity:
+        print(f"  {'Activity':<{LW}} {dim(activity)}")
+
+    owners      = bot.config.get("owner_ids", [])
     maintenance = bot.config.get("maintenance", False)
+    health_port = bot.config.get("health_port")
 
-    print(f"  {'Prefix':<16} {bold(bot.prefix)}")
-    print(f"  {'Owners':<16} {dim(str(len(owners)) + ' configured')}")
+    print(f"  {'Prefix':<{LW}} {bold(bot.prefix)}")
+    print(f"  {'Owners':<{LW}} {dim(str(len(owners)) + ' configured')}")
 
     if maintenance:
-        print(f"  {'Maintenance':<16} {yellow(bold('ON'))}")
+        maint_msg = bot.config.get("maintenance_message", "")
+        maint_str = yellow(bold("ON"))
+        if maint_msg:
+            maint_str += f"  {dim(maint_msg)}"
+        print(f"  {'Maintenance':<{LW}} {maint_str}")
+
+    if bot.has_token():
+        print(f"  {'Token':<{LW}} {teal('set ✓')}")
+    else:
+        print(f"  {'Token':<{LW}} {red('NOT SET')}  {dim('→ vmanage --update-token')}")
 
     py_ver = bot.python_version()
     if py_ver:
-        print(f"  {'Python':<16} {teal(py_ver)}  {dim('(venv)')}")
+        print(f"  {'Python':<{LW}} {teal(py_ver)}  {dim('(venv)')}")
     else:
-        print(f"  {'Python':<16} {red('venv not found')}")
+        print(f"  {'Python':<{LW}} {red('venv not found')}")
 
-    if bot.has_token():
-        print(f"  {'Discord token':<16} {teal('set ✓')}")
-    else:
-        print(f"  {'Discord token':<16} {red('NOT SET')}  {dim('→ vmanage --update-token')}")
+    if health_port:
+        print(f"  {'Health':<{LW}} {dim('http://localhost:' + str(health_port) + '/health')}")
 
     print()
 
     # ── Paths ─────────────────────────────────────────────────────────────────
     print(f"  {bold('Paths')}")
     print(f"  {hsep}")
-    print(f"  {'Code':<16} {dim(str(bot.install_dir))}")
-    print(f"  {'Data / token':<16} {dim(str(DATA_DIR))}")
+    print(f"  {'Code':<{LW}} {dim(str(bot.install_dir))}")
+    print(f"  {'Data / token':<{LW}} {dim(str(DATA_DIR))}")
     print()
 
-    # ── Quick-reference commands ──────────────────────────────────────────────
+    # ── Recent errors ─────────────────────────────────────────────────────────
+    print(f"  {bold('Recent Errors')}")
+    print(f"  {hsep}")
+    errors = bot.recent_errors(n=3)
+    if errors:
+        for ts, msg in errors:
+            print(f"  {red(ts)}  {msg}")
+    else:
+        print(f"  {teal('no errors in journal ✓')}")
+    print()
+
+    # ── Commands quick-reference ──────────────────────────────────────────────
     print(f"  {bold('Commands')}")
     print(f"  {hsep}")
     cmd_pairs = [
         ("Dashboard",    "vmanage"),
-        ("Start",        "vmanage --start"),
-        ("Stop",         "vmanage --stop"),
         ("Restart",      "vmanage --restart"),
         ("Logs",         "vmanage --logs"),
         ("Update",       "vmanage --update"),
