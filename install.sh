@@ -246,16 +246,27 @@ create_venv() {
     pip_out=$(mktemp)
     pip_err=$(mktemp)
     chown "$BOT_USER" "$pip_out" "$pip_err"
-    sudo -u "$BOT_USER" bash -lc "
+
+    # On a re-run, set_code_permissions() will have already set all files in
+    # APP_DIR (including any existing venv) to 664, stripping the execute bit.
+    # Restore it on venv/bin now so that pip and python are runnable again.
+    if [[ -d "$APP_DIR/venv/bin" ]]; then
+        find "$APP_DIR/venv/bin" -type f -exec chmod 775 {} \;
+    fi
+
+    # Use bash -c (not -lc) to skip login-shell profile sourcing, which can
+    # fail in minimal environments.  Redirect all output to the capture files
+    # so any failure produces actionable diagnostic output.
+    sudo -u "$BOT_USER" bash -c "
         set -Eeuo pipefail
         cd '$APP_DIR'
-        python3 -m venv venv >/dev/null 2>&1
-        venv/bin/pip install --upgrade pip >/dev/null 2>&1
-        venv/bin/pip install -r requirements.txt >'$pip_out' 2>'$pip_err'
+        python3 -m venv venv >'$pip_out' 2>'$pip_err'
+        venv/bin/pip install --upgrade pip >>'$pip_out' 2>>'$pip_err'
+        venv/bin/pip install -r requirements.txt >>'$pip_out' 2>>'$pip_err'
     " || {
         warn "venv or dependency install failed"
-        [[ -s "$pip_out" ]] && { echo; echo "----- pip stdout -----"; cat "$pip_out"; }
-        [[ -s "$pip_err" ]] && { echo; echo "----- pip stderr -----"; cat "$pip_err"; }
+        [[ -s "$pip_out" ]] && { echo; echo "----- stdout -----"; cat "$pip_out"; }
+        [[ -s "$pip_err" ]] && { echo; echo "----- stderr -----"; cat "$pip_err"; }
         rm -f "$pip_out" "$pip_err"
         exit 1
     }
