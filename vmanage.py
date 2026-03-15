@@ -616,14 +616,26 @@ def do_plugins(bot: BotInstance, debug: bool = False) -> None:
 
 # ── MOTD status block ─────────────────────────────────────────────────────────
 
+# Sentinel returned by _count_apt_updates() when apt is installed but the
+# update count could not be determined (dpkg lock, transient error, timeout…).
+_APT_UNKNOWN: int = -1
+
+
 def _count_apt_updates() -> Optional[int]:
-    """Return the number of upgradable packages, or None if apt is unavailable.
+    """Return the number of upgradable packages.
+
+    Return values:
+    - Non-negative ``int``: number of packages with available upgrades.
+    - ``_APT_UNKNOWN`` (-1): apt is installed but the count could not be
+      determined (cache parse error, apt-get failure, dpkg lock, timeout,
+      or any other transient error).
+    - ``None``: ``apt-get`` is not installed on this system.
 
     Uses ``/var/lib/update-notifier/updates-available`` (written by
     ``apt-get update`` / the ``update-notifier-common`` package) when present
     so that the MOTD script does not trigger a slow ``apt list`` call on every
-    SSH login.  Falls back to a quick ``apt-get -s upgrade`` count if the cache
-    file is missing.  Returns None if apt is not installed on this system.
+    SSH login.  Falls back to a quick ``apt-get -s upgrade`` count if the
+    cache file is missing.
     """
     if not shutil.which("apt-get"):
         return None
@@ -638,7 +650,7 @@ def _count_apt_updates() -> Optional[int]:
                 if parts and parts[0].isdigit():
                     return int(parts[0])
         except Exception:
-            pass
+            pass  # fall through to the slow path
 
     # Slow fallback: simulate an upgrade and count "Inst" lines.
     # Use -q (not -qq) so that "Inst ..." lines are not suppressed.
@@ -649,11 +661,11 @@ def _count_apt_updates() -> Optional[int]:
             env={"DEBIAN_FRONTEND": "noninteractive", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
         )
         if r.returncode != 0:
-            return None
+            return _APT_UNKNOWN
         count = sum(1 for line in r.stdout.splitlines() if line.startswith("Inst "))
         return count
     except Exception:
-        return None
+        return _APT_UNKNOWN
 
 
 def do_motd(bot: BotInstance) -> None:
@@ -775,7 +787,9 @@ def do_motd(bot: BotInstance) -> None:
     # Available apt package updates
     update_count = _count_apt_updates()
     if update_count is None:
-        print(f"  {'Updates':<{LW}} {dim('apt unavailable')}")
+        print(f"  {'Updates':<{LW}} {dim('apt not installed')}")
+    elif update_count == _APT_UNKNOWN:
+        print(f"  {'Updates':<{LW}} {dim('check unavailable')}")
     elif update_count == 0:
         print(f"  {'Updates':<{LW}} {teal('up to date')}")
     else:

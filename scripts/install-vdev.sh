@@ -396,9 +396,9 @@ install_motd() {
 #!/bin/bash
 # ${SERVICE_NAME} — Vantage bot status panel shown on SSH login
 # Installed by install-vdev.sh — delete this file to disable.
-# Errors are suppressed so a broken bot never blocks SSH login.
+# Errors are logged to syslog so a broken bot never blocks SSH login.
 if [[ -x /usr/local/bin/vmanage ]]; then
-  /usr/local/bin/vmanage --motd 2>/dev/null || true
+  /usr/local/bin/vmanage --motd 2> >(logger -t "${SERVICE_NAME}-motd") || true
 fi
 MOTD_EOF
 

@@ -120,9 +120,18 @@ class VManageView(discord.ui.View):
                 "Alternatively, use `vmanage --restart` / `vmanage --stop` "
                 "from the server terminal."
             )
-        # returncode 0 = dry-run ok, 5 = unit not found — both mean sudo
-        # accepted the command.  Any sudo auth error sets a non-zero code and
-        # writes to stderr, which is caught above.
+        # sudo passed; check whether systemctl itself ran successfully.
+        # For `start --dry-run`: exit 0 = ok, exit 5 = unit not found.
+        # Both confirm that sudo accepted the command.  Anything else (e.g.
+        # exit 1 with "Failed to connect to bus") indicates a host-level error.
+        if r.returncode not in (0, 5):
+            detail = (r.stderr.strip() or r.stdout.strip() or f"exit code {r.returncode}")
+            return False, (
+                f"systemctl returned an unexpected error for `{svc}.service` "
+                f"(exit {r.returncode}):\n```\n{detail}\n```\n"
+                "This may indicate that systemd is not running on this host, "
+                "or that the service name is incorrect."
+            )
         return True, ""
 
     def _run_service_cmd(self, action: str) -> tuple[int, str]:
