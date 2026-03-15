@@ -249,7 +249,8 @@ create_venv() {
 #
 validate_token_format() {
   local tok="$1"
-  # Discord bot tokens are three base64url segments joined by dots
+  # Discord bot tokens: three base64url segments separated by dots.
+  # Duplicated in scripts/install-vdev.sh and vmanage.py (_TOKEN_RE) — keep in sync.
   if [[ "${tok}" =~ ^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$ ]]; then
     return 0
   fi

@@ -45,9 +45,20 @@ DATA_DIR = Path("/var/lib/vprod")
 BOT_USER = "vprodbot"
 VERSION = "2.0.0"
 
+# Dev-layout auto-detection: if the production install directory doesn't exist
+# but this script is sitting inside a repo checkout (launcher.py is right next
+# to it), operate on the repo root as the install directory and ./data as the
+# data directory.  This makes every `vmanage` command work in a dev checkout
+# without any flags or environment variables.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if not INSTALL_DIR.exists() and (_SCRIPT_DIR / "launcher.py").exists():
+    INSTALL_DIR = _SCRIPT_DIR
+    DATA_DIR = _SCRIPT_DIR / "data"
+    BOT_USER = os.environ.get("USER", os.environ.get("LOGNAME", ""))
+
 # Discord bot token format: three base64url segments separated by dots.
-# This regex is intentionally duplicated in scripts/install-vprod.sh
-# (validate_token_format) — keep both in sync if the format ever changes.
+# This regex is intentionally duplicated in scripts/install-vprod.sh and
+# scripts/install-vdev.sh (validate_token_format) — keep all three in sync.
 _TOKEN_RE = re.compile(
     r"^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$"
 )
