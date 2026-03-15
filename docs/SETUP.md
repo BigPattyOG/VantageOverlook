@@ -90,28 +90,29 @@ All options can be set as environment variables before the script:
 
 ---
 
-## 4. Local Development
+## 4. Local Development (dev server)
 
-No server or sudo needed:
+Run the dev installer on a separate dev server (requires sudo — it installs a
+systemd service just like production, but with isolated paths and user):
 
 ```bash
 git clone https://github.com/BigPattyOG/VantageOverlook.git vprod
 cd vprod
-bash scripts/install-vdev.sh
+sudo bash scripts/install-vdev.sh
 ```
 
 The dev installer:
-1. Creates a virtualenv in `./venv/`
-2. Installs requirements
-3. Creates `./data/` with the right layout
-4. Prompts for your token → stores it in `./data/.env` (gitignored, chmod 600)
-5. Writes a dev `config.json`
+1. Installs system packages and creates the `vdevbot` system user
+2. Creates a virtualenv and installs requirements
+3. Creates `/var/lib/vdev/` with the right layout
+4. Prompts for your token → stores it in `/var/lib/vdev/.env` (chmod 600)
+5. Writes a dev `config.json` and registers a `vdev` systemd service
 
-Start the bot:
+Manage the dev bot:
 ```bash
-venv/bin/python launcher.py start
-# Or with debug logging:
-venv/bin/python launcher.py --debug start
+vmanage           # status panel
+vmanage --restart # restart the vdev service
+vmanage --logs    # tail service logs
 ```
 
 ---

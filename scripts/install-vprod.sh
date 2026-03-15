@@ -341,13 +341,12 @@ install_service() {
 }
 
 install_vmanage_bin() {
-  # Symlink vmanage.py into /usr/local/bin so admins can run `vmanage` from
-  # anywhere without activating the venv.  Uses only stdlib, so system python3
-  # is enough.
   local target="/usr/local/bin/vmanage"
   [[ -e "${target}" || -L "${target}" ]] && rm -f "${target}"
   ln -s "${APP_DIR}/vmanage.py" "${target}"
-  chmod 755 "${target}"
+  # Do NOT chmod the symlink target here — set_permissions already made
+  # vmanage.py 775 (group-writable). chmod on a symlink follows the link
+  # and would silently drop the group-write bit.
   ok "vmanage installed at ${target}  (→ ${APP_DIR}/vmanage.py)"
 }
 

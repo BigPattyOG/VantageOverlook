@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  install-vdev.sh — Development server installer for vprod
+#  install-vdev.sh — Development server installer for vdev
 #  Vantage Discord Bot Framework
 # =============================================================================
 #
@@ -343,7 +343,9 @@ install_vmanage_bin() {
   local target="/usr/local/bin/vmanage"
   [[ -e "${target}" || -L "${target}" ]] && rm -f "${target}"
   ln -s "${APP_DIR}/vmanage.py" "${target}"
-  chmod 755 "${target}"
+  # Do NOT chmod the symlink target here — set_permissions already made
+  # vmanage.py 775 (group-writable). chmod on a symlink follows the link
+  # and would silently drop the group-write bit.
   ok "vmanage installed at ${target}  (→ ${APP_DIR}/vmanage.py)"
 }
 

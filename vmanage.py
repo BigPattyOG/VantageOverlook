@@ -40,21 +40,32 @@ from typing import Any, Dict, List, Optional
 
 # ── constants ──────────────────────────────────────────────────────────────────
 
-INSTALL_DIR = Path("/opt/vprod")
-DATA_DIR = Path("/var/lib/vprod")
-BOT_USER = "vprodbot"
 VERSION = "2.0.0"
 
-# Dev-layout auto-detection: if the production install directory doesn't exist
-# but this script is sitting inside a repo checkout (launcher.py is right next
-# to it), operate on the repo root as the install directory and ./data as the
-# data directory.  This makes every `vmanage` command work in a dev checkout
-# without any flags or environment variables.
+# INSTALL_DIR is always the directory that contains this file.  When vmanage is
+# called via the /usr/local/bin/vmanage symlink, Path(__file__).resolve()
+# follows the symlink so _SCRIPT_DIR is always the real app directory
+# (e.g. /opt/vprod or /opt/vdev).  In a dev checkout it is the repo root.
 _SCRIPT_DIR = Path(__file__).resolve().parent
-if not INSTALL_DIR.exists() and (_SCRIPT_DIR / "launcher.py").exists():
-    INSTALL_DIR = _SCRIPT_DIR
-    DATA_DIR = _SCRIPT_DIR / "data"
-    BOT_USER = os.environ.get("USER", os.environ.get("LOGNAME", ""))
+INSTALL_DIR = _SCRIPT_DIR
+
+# DATA_DIR is resolved in order:
+#   1. VPROD_DATA_DIR env var — set by the systemd unit (EnvironmentFile path)
+#   2. /var/lib/<install_dir_name>  — conventional server layout for both prod
+#      and dev server installs without an active service environment
+#   3. INSTALL_DIR/data — local dev checkout fallback
+_env_data_dir = os.environ.get("VPROD_DATA_DIR", "")
+if _env_data_dir:
+    DATA_DIR: Path = Path(_env_data_dir)
+else:
+    _candidate = Path("/var/lib") / _SCRIPT_DIR.name
+    DATA_DIR = _candidate if _candidate.exists() else _SCRIPT_DIR / "data"
+
+# BOT_USER fallback — used when systemctl cannot return the service User= field.
+# On a server install the correct user is always read from the systemd unit at
+# runtime (see _run_bot_cmd / BotInstance.bot_user), so this value only matters
+# for local dev checkouts where sudo operations are not performed anyway.
+BOT_USER = os.environ.get("VPROD_BOT_USER", "vprodbot")
 
 # Discord bot token format: three base64url segments separated by dots.
 # This regex is intentionally duplicated in scripts/install-vprod.sh and
@@ -335,10 +346,20 @@ def _need_systemctl() -> None:
 def _run_bot_cmd(bot: BotInstance, *cmd_parts: str) -> None:
     """Run a command as the bot user inside the install directory."""
     import shlex
+    # Derive the bot user from the systemd unit so this works correctly for
+    # both vprod (vprodbot) and vdev (vdevbot) without hard-coding the user.
+    bot_user = BOT_USER
+    if shutil.which("systemctl"):
+        r = subprocess.run(
+            ["systemctl", "show", "-p", "User", "--value", bot.service_name],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            bot_user = r.stdout.strip()
     quoted_parts = " ".join(shlex.quote(str(p)) for p in cmd_parts)
     subprocess.run(
-        ["sudo", "-u", BOT_USER, "bash", "-c",
-         f"cd {shlex.quote(str(INSTALL_DIR))} && {quoted_parts}"]
+        ["sudo", "-u", bot_user, "bash", "-c",
+         f"cd {shlex.quote(str(bot.install_dir))} && {quoted_parts}"]
     )
 
 
@@ -437,9 +458,18 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
             info("Update cancelled.")
             return
     print()
+    # Derive the bot user from the systemd unit (same as _run_bot_cmd).
+    bot_user = BOT_USER
+    if shutil.which("systemctl"):
+        r_u = subprocess.run(
+            ["systemctl", "show", "-p", "User", "--value", bot.service_name],
+            capture_output=True, text=True,
+        )
+        if r_u.returncode == 0 and r_u.stdout.strip():
+            bot_user = r_u.stdout.strip()
     info("Pulling latest code from GitHub...")
     r = subprocess.run(
-        ["sudo", "-u", BOT_USER, "git", "-C", str(bot.install_dir), "pull", "--ff-only"]
+        ["sudo", "-u", bot_user, "git", "-C", str(bot.install_dir), "pull", "--ff-only"]
     )
     if r.returncode != 0:
         warn("git pull did not fast-forward — repository may be up-to-date or have local changes.")
@@ -448,9 +478,9 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
     print()
     if bot.has_venv():
         info("Upgrading Python dependencies...")
-        subprocess.run(["sudo", "-u", BOT_USER, str(bot.venv_pip),
+        subprocess.run(["sudo", "-u", bot_user, str(bot.venv_pip),
                         "install", "-q", "--upgrade", "pip"])
-        subprocess.run(["sudo", "-u", BOT_USER, str(bot.venv_pip),
+        subprocess.run(["sudo", "-u", bot_user, str(bot.venv_pip),
                         "install", "-q", "-r", str(bot.install_dir / "requirements.txt")])
         ok("Dependencies upgraded.")
     else:
@@ -472,24 +502,23 @@ def do_update_token(bot: BotInstance, debug: bool = False, yes: bool = False) ->
     import getpass
     import shlex
 
-    # Determine which .env to update: production layout first, dev layout second.
-    prod_env = DATA_DIR / ".env"
-    dev_env = INSTALL_DIR / "data" / ".env"
+    # The env file is always DATA_DIR/.env regardless of prod/dev layout;
+    # DATA_DIR is already resolved correctly at module load (from VPROD_DATA_DIR
+    # env var, conventional /var/lib/<name> path, or local ./data fallback).
+    env_file = DATA_DIR / ".env"
+    # Use sudo when the current process cannot write to DATA_DIR directly
+    # (server installs owned by the bot user / root).
+    needs_sudo = not os.access(DATA_DIR, os.W_OK)
 
-    if prod_env.exists():
-        env_file = prod_env
-        needs_sudo = True
-    elif dev_env.exists():
-        env_file = dev_env
-        needs_sudo = False
-    elif DATA_DIR.exists():
-        # Production data dir exists but .env not yet written
-        env_file = prod_env
-        needs_sudo = True
-    else:
-        # Fall back to dev layout
-        env_file = dev_env
-        needs_sudo = False
+    # Derive the bot user that should own the file (for chown in sudo path).
+    bot_user = BOT_USER
+    if shutil.which("systemctl"):
+        r_u = subprocess.run(
+            ["systemctl", "show", "-p", "User", "--value", bot.service_name],
+            capture_output=True, text=True,
+        )
+        if r_u.returncode == 0 and r_u.stdout.strip():
+            bot_user = r_u.stdout.strip()
 
     info(f"Token file: {bold(str(env_file))}")
     print()
@@ -531,7 +560,7 @@ def do_update_token(bot: BotInstance, debug: bool = False, yes: bool = False) ->
         # Write via stdin piped to `sudo tee` so the token never appears in
         # the process argument list (visible to other users via `ps`).
         safe_path = shlex.quote(str(env_file))
-        safe_user = shlex.quote(BOT_USER)
+        safe_user = shlex.quote(bot_user)
         cmd = (
             f"tee {safe_path} >/dev/null"
             f" && chmod 600 {safe_path}"

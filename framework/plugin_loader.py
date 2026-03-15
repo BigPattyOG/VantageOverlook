@@ -186,11 +186,24 @@ class PluginLoader:
                 continue
             manifest = _read_manifest(resolved if resolved.is_dir() else resolved.parent)
             current_hash = compute_plugin_hash(resolved)
+            # Derive module_path from the plugin's path relative to the
+            # ext_plugins directory so that nested layouts are importable.
+            # e.g. ext_plugins/my_features/welcome.py → _vp_ext.my_features.welcome
+            # e.g. ext_plugins/my_features/          → _vp_ext.my_features
+            try:
+                rel_parts = list(resolved.relative_to(self.plugins_dir).parts)
+                # Strip .py from a file plugin's last segment.
+                if resolved.is_file() and rel_parts and rel_parts[-1].endswith(".py"):
+                    rel_parts[-1] = rel_parts[-1][:-3]
+                module_path = f"{_EXT_NAMESPACE}." + ".".join(rel_parts)
+            except ValueError:
+                # Plugin lives outside plugins_dir — fall back to flat name.
+                module_path = f"{_EXT_NAMESPACE}.{name}"
             ep = ExternalPlugin(
                 name=name,
                 path=resolved,
                 manifest=manifest,
-                module_path=f"{_EXT_NAMESPACE}.{name}",
+                module_path=module_path,
                 current_hash=current_hash,
                 stored_hash=info.get("hash", ""),
             )

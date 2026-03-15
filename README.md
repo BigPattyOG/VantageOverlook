@@ -20,11 +20,11 @@ Your token is stored in `/var/lib/vprod/.env` (chmod 600, owned by the bot user 
 
 ```bash
 git clone https://github.com/BigPattyOG/VantageOverlook.git vprod && cd vprod
-bash scripts/install-vdev.sh
-venv/bin/python launcher.py start
+sudo bash scripts/install-vdev.sh
+vmanage --logs
 ```
 
-Token goes to `data/.env` (gitignored). No sudo, no systemd.
+Token goes to `/var/lib/vdev/.env` (chmod 600). Installs `vdev` systemd service.
 
 ---
 

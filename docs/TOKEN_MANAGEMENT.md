@@ -140,18 +140,19 @@ This tells systemd to read `/var/lib/vprod/.env` and inject each `KEY=value` lin
 
 ## Local development
 
-Token handling for local dev is even simpler:
+Token handling for a dev server install uses `install-vdev.sh` (requires sudo):
 
 ```bash
-bash scripts/install-vdev.sh
+sudo bash scripts/install-vdev.sh
 ```
 
-The dev installer prompts for the token and stores it in `./data/.env` (which is gitignored). No systemd, no server, no sudo.
+The dev installer prompts for the token and stores it in `/var/lib/vdev/.env`
+(chmod 600, owned by `vdevbot`). It installs a `vdev` systemd service
+mirroring prod, isolated under `/opt/vdev` and `/var/lib/vdev`.
 
-To change the token later:
+To rotate the token later:
 ```bash
-nano data/.env   # edit DISCORD_TOKEN= line
-# Restart the bot process
+vmanage --update-token
 ```
 
 ---

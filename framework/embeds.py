@@ -109,7 +109,7 @@ class VantageEmbed:
             if thumbnail:
                 embed.set_thumbnail(url=bot.user.display_avatar.url)
 
-        footer_parts = [f"Vantage v{version}"]
+        footer_parts = [f"{bot_name} v{version}"]
         if footer_extra:
             footer_parts.append(footer_extra)
         embed.set_footer(text="  ·  ".join(footer_parts))
