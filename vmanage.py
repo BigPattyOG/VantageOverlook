@@ -641,12 +641,15 @@ def _count_apt_updates() -> Optional[int]:
             pass
 
     # Slow fallback: simulate an upgrade and count "Inst" lines.
+    # Use -q (not -qq) so that "Inst ..." lines are not suppressed.
     try:
         r = subprocess.run(
-            ["apt-get", "--simulate", "-qq", "upgrade"],
+            ["apt-get", "--simulate", "-q", "upgrade"],
             capture_output=True, text=True, timeout=30,
             env={"DEBIAN_FRONTEND": "noninteractive", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
         )
+        if r.returncode != 0:
+            return None
         count = sum(1 for line in r.stdout.splitlines() if line.startswith("Inst "))
         return count
     except Exception:

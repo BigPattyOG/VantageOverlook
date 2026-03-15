@@ -80,6 +80,10 @@ class VManageView(discord.ui.View):
         Uses ``sudo -n`` (non-interactive) so it never blocks on a password
         prompt.  Returns ``(True, "")`` when access is confirmed, or
         ``(False, error_message)`` when it is not.
+
+        The probe runs ``sudo -n systemctl start --dry-run <svc>`` so that the
+        test command is covered by the same sudoers rule recommended to users
+        (restart/stop/start).  ``--dry-run`` makes start a no-op.
         """
         if not shutil.which("systemctl"):
             return False, "systemctl is not installed on this system."
@@ -89,7 +93,7 @@ class VManageView(discord.ui.View):
                 "Use `vmanage --restart` from the server terminal instead."
             )
         r = subprocess.run(
-            ["sudo", "-n", "systemctl", "is-active", svc],
+            ["sudo", "-n", "systemctl", "start", "--dry-run", svc],
             capture_output=True, text=True, timeout=5,
         )
         stderr_lower = r.stderr.lower()
@@ -99,6 +103,9 @@ class VManageView(discord.ui.View):
             kw in stderr_lower
             for kw in ("password", "not allowed", "not permitted", "no tty", "sorry")
         ):
+            # Resolve the real systemctl path so the printed sudoers rule
+            # matches the actual binary (commonly /usr/bin/systemctl on Ubuntu).
+            systemctl_path = shutil.which("systemctl") or "/usr/bin/systemctl"
             return False, (
                 f"The bot process does not have permission to run `sudo systemctl` "
                 f"commands for `{svc}.service`.\n\n"
@@ -106,14 +113,16 @@ class VManageView(discord.ui.View):
                 "Run the following **on the server as root**, replacing `botuser` "
                 "with the user the bot runs as (e.g. `vprodbot`):\n"
                 f"```\necho 'botuser ALL=(ALL) NOPASSWD: "
-                f"/bin/systemctl restart {svc}, "
-                f"/bin/systemctl stop {svc}, "
-                f"/bin/systemctl start {svc}'"
+                f"{systemctl_path} restart {svc}, "
+                f"{systemctl_path} stop {svc}, "
+                f"{systemctl_path} start {svc}'"
                 f" | tee /etc/sudoers.d/{svc}-control\nchmod 440 /etc/sudoers.d/{svc}-control\n```\n"
                 "Alternatively, use `vmanage --restart` / `vmanage --stop` "
                 "from the server terminal."
             )
-        # returncode 0 = active, 3 = inactive/unknown — both mean sudo worked.
+        # returncode 0 = dry-run ok, 5 = unit not found — both mean sudo
+        # accepted the command.  Any sudo auth error sets a non-zero code and
+        # writes to stderr, which is caught above.
         return True, ""
 
     def _run_service_cmd(self, action: str) -> tuple[int, str]:

@@ -162,7 +162,8 @@ class VantageBot(commands.Bot):
 
         if isinstance(error, commands.MissingRequiredArgument):
             param = error.param.name
-            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
+            sig = ctx.command.signature
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name}" + (f" {sig}`" if sig else "`")
             await self._send_error(
                 ctx,
                 "Missing Argument",
@@ -173,7 +174,8 @@ class VantageBot(commands.Bot):
             return
 
         if isinstance(error, commands.TooManyArguments):
-            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
+            sig = ctx.command.signature
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name}" + (f" {sig}`" if sig else "`")
             await self._send_error(
                 ctx,
                 "Too Many Arguments",
@@ -184,7 +186,8 @@ class VantageBot(commands.Bot):
             return
 
         if isinstance(error, (commands.BadArgument, commands.BadUnionArgument)):
-            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
+            sig = ctx.command.signature
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name}" + (f" {sig}`" if sig else "`")
             await self._send_error(
                 ctx,
                 "Invalid Argument",
