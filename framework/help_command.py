@@ -224,8 +224,8 @@ class HelpView(discord.ui.View):
 
     async def on_timeout(self) -> None:
         for child in self.children:
-            if hasattr(child, "disabled"):
-                child.disabled = True  # type: ignore[attr-defined]
+            if isinstance(child, (discord.ui.Button, discord.ui.Select)):
+                child.disabled = True
         if self.message:
             try:
                 await self.message.edit(view=self)

@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -73,6 +74,48 @@ class VManageView(discord.ui.View):
             return False
         return True
 
+    def _probe_service_access(self, svc: str) -> tuple[bool, str]:
+        """Non-destructively test whether sudo systemctl is available.
+
+        Uses ``sudo -n`` (non-interactive) so it never blocks on a password
+        prompt.  Returns ``(True, "")`` when access is confirmed, or
+        ``(False, error_message)`` when it is not.
+        """
+        if not shutil.which("systemctl"):
+            return False, "systemctl is not installed on this system."
+        if not shutil.which("sudo"):
+            return False, (
+                "sudo is not installed. "
+                "Use `vmanage --restart` from the server terminal instead."
+            )
+        r = subprocess.run(
+            ["sudo", "-n", "systemctl", "is-active", svc],
+            capture_output=True, text=True, timeout=5,
+        )
+        stderr_lower = r.stderr.lower()
+        # sudo prefixes its own error messages with "sudo:" at the start of a line.
+        # A service name will never match this pattern.
+        if r.stderr.lstrip().startswith("sudo:") and any(
+            kw in stderr_lower
+            for kw in ("password", "not allowed", "not permitted", "no tty", "sorry")
+        ):
+            return False, (
+                f"The bot process does not have permission to run `sudo systemctl` "
+                f"commands for `{svc}.service`.\n\n"
+                "To fix this, add a passwordless sudo rule for the bot user. "
+                "Run the following **on the server as root**, replacing `botuser` "
+                "with the user the bot runs as (e.g. `vprodbot`):\n"
+                f"```\necho 'botuser ALL=(ALL) NOPASSWD: "
+                f"/bin/systemctl restart {svc}, "
+                f"/bin/systemctl stop {svc}, "
+                f"/bin/systemctl start {svc}'"
+                f" | tee /etc/sudoers.d/{svc}-control\nchmod 440 /etc/sudoers.d/{svc}-control\n```\n"
+                "Alternatively, use `vmanage --restart` / `vmanage --stop` "
+                "from the server terminal."
+            )
+        # returncode 0 = active, 3 = inactive/unknown — both mean sudo worked.
+        return True, ""
+
     def _run_service_cmd(self, action: str) -> tuple[int, str]:
         """Run ``sudo systemctl <action> <service>`` and return (returncode, stderr)."""
         svc = self._service_name()
@@ -97,6 +140,17 @@ class VManageView(discord.ui.View):
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
+        can_control, err_msg = self._probe_service_access(svc)
+        if not can_control:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="Service Control Unavailable",
+                    description=err_msg,
+                    color=RED,
+                ),
+                ephemeral=True,
+            )
+            return
         await interaction.response.send_message(
             embed=discord.Embed(description="Restarting bot service...", color=BLURPLE),
             ephemeral=True,
@@ -116,6 +170,17 @@ class VManageView(discord.ui.View):
         except ValueError as exc:
             await interaction.response.send_message(
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
+            )
+            return
+        can_control, err_msg = self._probe_service_access(svc)
+        if not can_control:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="Service Control Unavailable",
+                    description=err_msg,
+                    color=RED,
+                ),
+                ephemeral=True,
             )
             return
         await interaction.response.send_message(
@@ -139,6 +204,17 @@ class VManageView(discord.ui.View):
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
+        can_control, err_msg = self._probe_service_access(svc)
+        if not can_control:
+            await interaction.response.send_message(
+                embed=discord.Embed(
+                    title="Service Control Unavailable",
+                    description=err_msg,
+                    color=RED,
+                ),
+                ephemeral=True,
+            )
+            return
         await interaction.response.send_message(
             embed=discord.Embed(
                 description="Pulling latest code and upgrading dependencies...\nThe bot will restart automatically.",
@@ -148,7 +224,6 @@ class VManageView(discord.ui.View):
         )
 
         def _do_update() -> str:
-            import os
             from pathlib import Path
             install_dir = Path(__file__).resolve().parents[1]
             venv_pip = install_dir / "venv" / "bin" / "pip"
