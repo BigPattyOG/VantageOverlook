@@ -860,5 +860,271 @@ class Admin(commands.Cog, name="Owner"):
         await ctx.send(embed=embed)
 
 
+    # ── plugin management ─────────────────────────────────────────────────────
+
+    @commands.group(name="plugin", invoke_without_command=True)
+    @commands.is_owner()
+    async def plugin_group(self, ctx: commands.Context) -> None:
+        """Manage external (local/private) plugins.
+
+        **Owner only.**  Run ``!plugin`` on its own to see the sub-commands.
+
+        Sub-commands::
+
+            {prefix}plugin list             — Show all registered external plugins
+            {prefix}plugin install <path>   — Register a local plugin
+            {prefix}plugin remove  <name>   — Remove from registry (keeps files)
+            {prefix}plugin enable  <name>   — Enable a disabled plugin
+            {prefix}plugin disable <name>   — Disable without removing
+            {prefix}plugin reload  <name>   — Hot-reload a running plugin
+            {prefix}plugin verify           — Check all plugin integrity hashes
+        """
+        embed = self._info(
+            "📦  Plugin Management",
+            (
+                f"`{ctx.clean_prefix}plugin list` — list registered external plugins\n"
+                f"`{ctx.clean_prefix}plugin install <path>` — register a local plugin\n"
+                f"`{ctx.clean_prefix}plugin remove <name>` — unregister\n"
+                f"`{ctx.clean_prefix}plugin enable <name>` — enable\n"
+                f"`{ctx.clean_prefix}plugin disable <name>` — disable\n"
+                f"`{ctx.clean_prefix}plugin reload <name>` — hot-reload\n"
+                f"`{ctx.clean_prefix}plugin verify` — verify integrity hashes"
+            ),
+        )
+        await ctx.send(embed=embed)
+
+    @plugin_group.command(name="list")
+    @commands.is_owner()
+    async def plugin_list(self, ctx: commands.Context) -> None:
+        """List all registered external plugins and their status."""
+        from framework.plugin_manager import PluginManager
+        mgr = PluginManager()
+        reg = mgr.get_ext_plugins()
+
+        if not reg:
+            await ctx.send(embed=self._info(
+                "📦  External Plugins",
+                "No external plugins registered.\n"
+                f"Add one with `{ctx.clean_prefix}plugin install <path>`.",
+            ))
+            return
+
+        lines = []
+        for name, info in reg.items():
+            enabled = info.get("enabled", True)
+            loaded = f"_vp_ext.{name}" in self.bot.extensions
+            manifest = info.get("manifest", {})
+            ver = manifest.get("version", "?")
+            status = "🟢 loaded" if loaded else ("🟡 enabled" if enabled else "🔴 disabled")
+            lines.append(f"**{name}** `v{ver}` — {status}")
+            if info.get("path"):
+                lines.append(f"  └ `{info['path']}`")
+
+        embed = self._info(f"📦  External Plugins — {len(reg)}", "\n".join(lines))
+        await ctx.send(embed=embed)
+
+    @plugin_group.command(name="install")
+    @commands.is_owner()
+    async def plugin_install(self, ctx: commands.Context, path: str) -> None:
+        """Register a local plugin directory or file.
+
+        **Owner only.**
+
+        *path* must be an absolute path to a plugin directory (containing
+        ``__init__.py``) or a single ``.py`` file.  The plugin is validated
+        (path containment check + hash computed) and added to the registry.
+        After registering, load it with ``!load _vp_ext.<name>``.
+
+        Example::
+
+            {prefix}plugin install /var/lib/vprod/ext_plugins/welcome
+        """
+        from pathlib import Path
+        from framework.config import resolve_ext_plugins_dir
+        from framework.plugin_loader import PluginLoader, compute_plugin_hash, _read_manifest
+        from framework.plugin_manager import PluginManager
+
+        raw = Path(path).expanduser()
+        ext_dir = resolve_ext_plugins_dir(self.bot.config)
+        loader = PluginLoader(ext_dir)
+
+        resolved = loader._safe_resolve(raw)
+        if resolved is None:
+            await ctx.send(embed=self._err(
+                f"Path `{path}` is outside the allowed plugins directory "
+                f"(`{ext_dir}`).\n"
+                "Move the plugin there first, then run this command again."
+            ))
+            return
+
+        if not resolved.exists():
+            await ctx.send(embed=self._err(f"Path does not exist: `{resolved}`"))
+            return
+
+        name = resolved.stem if resolved.is_file() else resolved.name
+        if not name.isidentifier():
+            await ctx.send(embed=self._err(
+                f"`{name}` is not a valid Python identifier. "
+                "Rename the plugin directory/file and try again."
+            ))
+            return
+
+        manifest_root = resolved if resolved.is_dir() else resolved.parent
+        manifest = _read_manifest(manifest_root)
+        plugin_hash = compute_plugin_hash(resolved)
+
+        mgr = PluginManager()
+        mgr.register_ext_plugin(
+            name=name,
+            path=str(resolved),
+            plugin_hash=plugin_hash,
+            manifest=manifest,
+            enabled=True,
+        )
+
+        display = manifest.get("name", name)
+        ver = manifest.get("version", "?")
+        embed = self._ok(
+            f"Registered external plugin **{display}** `v{ver}`.\n"
+            f"Load it now with: `{ctx.clean_prefix}load _vp_ext.{name}`"
+        )
+        log.info("Registered external plugin '%s' from %s by %s", name, resolved, ctx.author)
+        await ctx.send(embed=embed)
+
+    @plugin_group.command(name="remove")
+    @commands.is_owner()
+    async def plugin_remove(self, ctx: commands.Context, name: str) -> None:
+        """Remove an external plugin from the registry (does not delete files).
+
+        **Owner only.**  Unload it from Discord first with
+        ``!unload _vp_ext.<name>``.
+        """
+        from framework.plugin_manager import PluginManager
+        mgr = PluginManager()
+        try:
+            mgr.remove_ext_plugin(name)
+            await ctx.send(embed=self._ok(
+                f"External plugin **{name}** removed from registry.\n"
+                "Files on disk are unchanged."
+            ))
+            log.info("Removed external plugin '%s' from registry by %s", name, ctx.author)
+        except ValueError as exc:
+            await ctx.send(embed=self._err(str(exc)))
+
+    @plugin_group.command(name="enable")
+    @commands.is_owner()
+    async def plugin_enable(self, ctx: commands.Context, name: str) -> None:
+        """Enable a disabled external plugin."""
+        from framework.plugin_manager import PluginManager
+        mgr = PluginManager()
+        try:
+            mgr.enable_ext_plugin(name, enabled=True)
+            await ctx.send(embed=self._ok(
+                f"External plugin **{name}** enabled.\n"
+                f"Load it with: `{ctx.clean_prefix}load _vp_ext.{name}`"
+            ))
+        except ValueError as exc:
+            await ctx.send(embed=self._err(str(exc)))
+
+    @plugin_group.command(name="disable")
+    @commands.is_owner()
+    async def plugin_disable(self, ctx: commands.Context, name: str) -> None:
+        """Disable an external plugin (unload and mark as disabled)."""
+        from framework.plugin_manager import PluginManager
+        mgr = PluginManager()
+        try:
+            ext_path = f"_vp_ext.{name}"
+            if ext_path in self.bot.extensions:
+                await self.bot.unload_extension(ext_path)
+            mgr.enable_ext_plugin(name, enabled=False)
+            await ctx.send(embed=self._ok(
+                f"External plugin **{name}** disabled and unloaded."
+            ))
+        except ValueError as exc:
+            await ctx.send(embed=self._err(str(exc)))
+        except Exception as exc:
+            await ctx.send(embed=self._err(f"Failed to unload: `{exc}`"))
+
+    @plugin_group.command(name="reload")
+    @commands.is_owner()
+    async def plugin_reload(self, ctx: commands.Context, name: str) -> None:
+        """Hot-reload an external plugin (picks up file changes).
+
+        **Owner only.**  The bot does not need to restart.
+        """
+        from framework.config import resolve_ext_plugins_dir
+        from framework.plugin_loader import PluginLoader
+        from framework.plugin_manager import PluginManager
+
+        mgr = PluginManager()
+        reg = mgr.get_ext_plugins()
+        if name not in reg:
+            await ctx.send(embed=self._err(
+                f"External plugin **{name}** is not registered.\n"
+                f"Register it first with `{ctx.clean_prefix}plugin install <path>`."
+            ))
+            return
+
+        ext_dir = resolve_ext_plugins_dir(self.bot.config)
+        loader = PluginLoader(ext_dir)
+        async with ctx.typing():
+            try:
+                ep = await loader.reload_one(self.bot, name, reg)
+                # Update stored hash after successful reload
+                mgr.update_ext_plugin_hash(name, ep.current_hash)
+                await ctx.send(embed=self._ok(
+                    f"External plugin **{ep.display_name}** `v{ep.version}` reloaded."
+                ))
+                log.info("Reloaded external plugin '%s' by %s", name, ctx.author)
+            except Exception as exc:
+                await ctx.send(embed=self._err(
+                    f"Failed to reload **{name}**:\n```\n{exc}\n```"
+                ))
+
+    @plugin_group.command(name="verify")
+    @commands.is_owner()
+    async def plugin_verify(self, ctx: commands.Context) -> None:
+        """Verify SHA-256 integrity hashes for all external plugins.
+
+        **Owner only.**  Compares the hash stored at install time with the
+        current hash of the plugin files.  A mismatch means files changed
+        since the plugin was registered (e.g. a ``git pull`` update).
+
+        Run ``!plugin reload <name>`` after updating to refresh the stored hash.
+        """
+        from framework.config import resolve_ext_plugins_dir
+        from framework.plugin_loader import compute_plugin_hash, _read_manifest
+        from framework.plugin_manager import PluginManager
+        from pathlib import Path
+
+        mgr = PluginManager()
+        reg = mgr.get_ext_plugins()
+
+        if not reg:
+            await ctx.send(embed=self._info("🔐  Plugin Verify", "No external plugins registered."))
+            return
+
+        lines: list[str] = []
+        for name, info in reg.items():
+            path = Path(info.get("path", ""))
+            if not path.exists():
+                lines.append(f"❓ **{name}** — path not found: `{path}`")
+                continue
+            current = compute_plugin_hash(path)
+            stored = info.get("hash", "")
+            if not stored:
+                lines.append(f"⬜ **{name}** — no stored hash (run `!plugin install` to register properly)")
+            elif current == stored:
+                lines.append(f"✅ **{name}** — hash OK")
+            else:
+                lines.append(
+                    f"⚠️ **{name}** — hash mismatch (files changed since install)\n"
+                    f"  Run `{ctx.clean_prefix}plugin reload {name}` to update hash"
+                )
+
+        embed = self._info("🔐  Plugin Integrity", "\n".join(lines))
+        await ctx.send(embed=embed)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Admin(bot))

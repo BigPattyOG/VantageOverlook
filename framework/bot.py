@@ -22,6 +22,7 @@ from discord.ext import commands
 from .embeds import VantageEmbed, GOLD
 from .health import HealthServer
 from .help_command import VantageHelp
+from .plugin_loader import PluginLoader
 from .plugin_manager import PluginManager
 
 log = logging.getLogger("vprod")
@@ -37,6 +38,8 @@ class VantageBot(commands.Bot):
         self.plugin_manager = PluginManager()
         self.start_time: Optional[datetime] = None
         self._health_server: Optional[HealthServer] = None
+        # External plugins that failed to load — shown in health endpoint.
+        self.failed_ext_plugins: list = []
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -57,13 +60,15 @@ class VantageBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Called once before the bot connects. Load extensions here."""
+        from .config import resolve_ext_plugins_dir
+
         # Fetch owner(s) from the Discord API and merge with config owner_ids.
         await self._sync_owner_ids()
 
-        # Make all repos importable
+        # Make all repos importable.
         self.plugin_manager.setup_paths()
 
-        # Start health-check HTTP server if a port is configured
+        # Start health-check HTTP server if a port is configured.
         health_port = int(self.config.get("health_port", 8080))
         if health_port > 0:
             self._health_server = HealthServer(self, health_port)
@@ -76,7 +81,7 @@ class VantageBot(commands.Bot):
                 )
                 self._health_server = None
 
-        # Always load built-in extensions
+        # Always load built-in extensions.
         for ext in BUILTIN_EXTENSIONS:
             try:
                 await self.load_extension(ext)
@@ -84,13 +89,28 @@ class VantageBot(commands.Bot):
             except Exception:
                 log.exception("Failed to load built-in extension: %s", ext)
 
-        # Load user-configured autoload plugins
+        # Load user-configured autoload plugins (community/GitHub repos).
         for plugin_path in self.plugin_manager.get_autoload():
             try:
                 await self.load_extension(plugin_path)
                 log.info("Autoloaded plugin: %s", plugin_path)
             except Exception:
                 log.exception("Failed to autoload plugin: %s", plugin_path)
+
+        # Load external (local/private) plugins.
+        ext_plugins_dir = resolve_ext_plugins_dir(self.config)
+        if ext_plugins_dir.exists():
+            loader = PluginLoader(ext_plugins_dir)
+            registry = self.plugin_manager.get_ext_plugins()
+            if registry:
+                _, failed = await loader.load_all(self, registry)
+                self.failed_ext_plugins = failed
+                if failed:
+                    log.warning(
+                        "%d external plugin(s) failed to load: %s",
+                        len(failed),
+                        [f.name for f in failed],
+                    )
 
     async def close(self) -> None:
         """Gracefully shut down the health server before disconnecting."""

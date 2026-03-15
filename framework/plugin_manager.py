@@ -38,11 +38,12 @@ _DEFAULT: Dict = {
     "repos": {},
     "installed_plugins": [],
     "autoload": [],
+    "ext_plugins": {},   # external / local plugins: {name: {path, enabled, hash, ...}}
 }
 
 
 class PluginManager:
-    """Manages plugin repos and installation state."""
+    """Manages plugin repos, autoload state, and external plugin registry."""
 
     def __init__(self) -> None:
         self._data = self._load()
@@ -262,4 +263,58 @@ class PluginManager:
         repos_dir = str(REPOS_DIR.resolve())
         if repos_dir not in sys.path:
             sys.path.insert(0, repos_dir)
+
+    # ── external plugin registry ──────────────────────────────────────────────
+
+    def get_ext_plugins(self) -> Dict[str, dict]:
+        """Return the external plugin registry dict."""
+        return dict(self._data.get("ext_plugins", {}))
+
+    def register_ext_plugin(
+        self,
+        name: str,
+        path: str,
+        plugin_hash: str,
+        manifest: Optional[dict] = None,
+        enabled: bool = True,
+    ) -> None:
+        """Register an external plugin in the registry.
+
+        Called by the install flow after a plugin has been copied/linked into
+        ``ext_plugins_dir`` and its SHA-256 hash computed.
+        """
+        from datetime import datetime, timezone
+        self._data.setdefault("ext_plugins", {})[name] = {
+            "path": path,
+            "enabled": enabled,
+            "hash": plugin_hash,
+            "manifest": manifest or {},
+            "installed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._save()
+
+    def enable_ext_plugin(self, name: str, enabled: bool = True) -> None:
+        """Enable or disable an external plugin without removing it."""
+        reg = self._data.setdefault("ext_plugins", {})
+        if name not in reg:
+            raise ValueError(f"External plugin '{name}' is not registered.")
+        reg[name]["enabled"] = enabled
+        self._save()
+
+    def remove_ext_plugin(self, name: str) -> None:
+        """Remove an external plugin from the registry (does not delete files)."""
+        reg = self._data.setdefault("ext_plugins", {})
+        if name not in reg:
+            raise ValueError(f"External plugin '{name}' is not registered.")
+        del reg[name]
+        self._save()
+
+    def update_ext_plugin_hash(self, name: str, new_hash: str) -> None:
+        """Update the stored hash after a plugin has been updated on disk."""
+        reg = self._data.setdefault("ext_plugins", {})
+        if name not in reg:
+            raise ValueError(f"External plugin '{name}' is not registered.")
+        reg[name]["hash"] = new_hash
+        self._save()
+
 
