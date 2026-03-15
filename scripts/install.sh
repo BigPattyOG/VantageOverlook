@@ -287,7 +287,7 @@ read_token() {
 }
 
 write_env_file() {
-    local env_file="$APP_DIR/.env"
+    local env_file="$DATA_DIR/.env"
     local token="${DISCORD_TOKEN:-}"
 
     if [[ -f "$env_file" && -z "$token" ]]; then
@@ -360,7 +360,7 @@ install_service() {
     sed \
         -e "s|^User=.*|User=$BOT_USER|" \
         -e "s|^\(WorkingDirectory=\)/opt/vprod|\1$APP_DIR|" \
-        -e "s|^\(EnvironmentFile=-\)/opt/vprod|\1$APP_DIR|" \
+        -e "s|^\(EnvironmentFile=-\)/var/lib/vprod|\1$DATA_DIR|" \
         -e "s|^\(ExecStart=\)/opt/vprod|\1$APP_DIR|" \
         -e "s|^\(Environment=VPROD_DATA_DIR=\)/var/lib/vprod|\1$DATA_DIR|" \
         "$svc_src" > "$svc_dest"

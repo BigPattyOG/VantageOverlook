@@ -21,8 +21,8 @@ Usage
 -----
 Call once at process startup before anything else logs::
 
-    from core.log_setup import setup_logging
-    from core.config import DATA_DIR
+    from framework.log_setup import setup_logging
+    from framework.config import DATA_DIR
 
     log_file = setup_logging(debug=False, log_dir=DATA_DIR / "logs")
 """

@@ -131,7 +131,7 @@ check_os() {
 
 install_packages() {
   run_quiet "apt update" apt update
-  run_quiet "Install required packages" env DEBIAN_FRONTEND=noninteractive \
+  run_quiet "install required packages" env DEBIAN_FRONTEND=noninteractive \
     apt install -y git python3 python3-pip python3-venv build-essential ca-certificates
 }
 

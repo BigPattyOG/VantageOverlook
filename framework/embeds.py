@@ -8,7 +8,7 @@ Usage
 -----
 ::
 
-    from core.embeds import VantageEmbed
+    from framework.embeds import VantageEmbed
 
     # Informational (teal)
     embed = VantageEmbed.info("Server Info", "Here are the details…", bot=ctx.bot)
