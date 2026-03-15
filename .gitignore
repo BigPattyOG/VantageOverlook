@@ -7,6 +7,9 @@ venv/
 .venv/
 env/
 data/cog_data.json
+data/plugin_data.json
 data/config.json
 data/repos/*/
 !data/repos/.gitkeep
+data/logs/
+data/guilds/

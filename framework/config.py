@@ -16,15 +16,30 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 def _load_dotenv() -> None:
-    """Load a .env file from the project root if python-dotenv is available."""
+    """Load .env files using python-dotenv if available.
+
+    Resolution order (first match wins — ``override=False`` means an
+    already-set env var is never overwritten):
+
+    1. ``<DATA_DIR>/.env``   — production location written by install-vprod.sh;
+                               lives outside the git directory so ``git pull``
+                               can never wipe the token.
+    2. Project-root ``.env`` — development / legacy location.
+    """
     try:
         from dotenv import load_dotenv
-        env_file = Path(__file__).resolve().parents[1] / ".env"
-        load_dotenv(dotenv_path=env_file, override=False)
+        # 1 — production token location (outside git directory)
+        data_env = DATA_DIR / ".env"
+        if data_env.exists():
+            load_dotenv(dotenv_path=data_env, override=False)
+        # 2 — project-root .env (dev / legacy)
+        root_env = Path(__file__).resolve().parents[1] / ".env"
+        if root_env.exists():
+            load_dotenv(dotenv_path=root_env, override=False)
     except ImportError:
         pass
 
@@ -65,6 +80,25 @@ def resolve_data_dir() -> Path:
 DATA_DIR = resolve_data_dir()
 CONFIG_PATH = DATA_DIR / "config.json"
 
+
+def resolve_ext_plugins_dir(config: Optional[Dict[str, Any]] = None) -> Path:
+    """Return the external plugins directory.
+
+    Resolution order:
+    1. ``VPROD_PLUGINS_DIR`` environment variable.
+    2. ``ext_plugins_dir`` key in *config* (absolute or relative to DATA_DIR).
+    3. ``<data_dir>/ext_plugins/`` (default).
+    """
+    env_dir = os.environ.get("VPROD_PLUGINS_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir)
+    if config:
+        cfg_dir = str(config.get("ext_plugins_dir", "")).strip()
+        if cfg_dir:
+            p = Path(cfg_dir)
+            return p if p.is_absolute() else DATA_DIR / p
+    return DATA_DIR / "ext_plugins"
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "name": "vprod",
     "service_name": "vprod",
@@ -73,6 +107,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "description": "vprod — Vantage Discord Bot",
     "status": "online",
     "activity": "{prefix}help for commands",
+    # Health-check endpoint — set health_port to 0 to disable.
+    # health_host defaults to 127.0.0.1 (localhost); set to 0.0.0.0
+    # to expose to external interfaces (e.g. a remote monitoring service).
+    "health_port": 8080,
+    "health_host": "0.0.0.0",
+    # Maintenance mode — when True, non-owner commands are blocked.
+    "maintenance": False,
+    "maintenance_message": "",
+    # External plugins directory — where your own custom plugins live.
+    # Defaults to <data_dir>/ext_plugins/. Override with VPROD_PLUGINS_DIR
+    # or set this key to an absolute path.
+    "ext_plugins_dir": "",
 }
 
 

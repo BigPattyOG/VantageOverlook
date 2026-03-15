@@ -4,15 +4,15 @@ After=network.target
 
 [Service]
 Type=simple
-# System account that runs the bot — created by: sudo python launcher.py system create-user
+# System account that runs the bot — created by install-vprod.sh
 User=vprodbot
 # Layout:
-#   Code  -> /opt/vprod/       (git clone, venv)
-#   Data  -> /var/lib/vprod/   (config.json, cog_data.json, guilds/, repos/)
-#   Token -> /opt/vprod/.env   (DISCORD_TOKEN — chmod 600, never committed)
-#   Logs  -> journald           (journalctl -u vprod -f)
+#   Code  -> /opt/vprod/          (git clone, venv)
+#   Data  -> /var/lib/vprod/      (config.json, cog_data.json, guilds/, repos/, logs/)
+#   Token -> /var/lib/vprod/.env  (DISCORD_TOKEN — chmod 600, outside git, never reset by git pull)
+#   Logs  -> journald + /var/lib/vprod/logs/vprod.log
 WorkingDirectory=/opt/vprod
-EnvironmentFile=-/opt/vprod/.env
+EnvironmentFile=-/var/lib/vprod/.env
 Environment=VPROD_DATA_DIR=/var/lib/vprod
 ExecStart=/opt/vprod/venv/bin/python launcher.py start
 Restart=on-failure

@@ -1,0 +1,1 @@
+"""Vantage Bot — framework package."""

@@ -4,7 +4,7 @@ Each guild gets its own file at ``<data_dir>/guilds/{guild_id}.json``.
 Use :func:`load_guild` and :func:`save_guild` to read/write guild-specific
 settings and state without touching the global ``config.json``.
 
-The data directory is resolved via :func:`core.config.resolve_data_dir`.
+The data directory is resolved via :func:`framework.config.resolve_data_dir`.
 """
 
 from __future__ import annotations
