@@ -223,8 +223,11 @@ class VManageView(discord.ui.View):
         if self.message:
             try:
                 await self.message.edit(view=self)
-            except discord.HTTPException:
-                pass
+            except discord.HTTPException as exc:
+                log.debug(
+                    "Could not disable vmanage panel buttons (message deleted or no permission): %s",
+                    exc,
+                )
 
 
 # ── Helper: build the vmanage embed ──────────────────────────────────────────
@@ -331,7 +334,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
 
 # ── Admin cog ─────────────────────────────────────────────────────────────────
 
-class Admin(commands.Cog, name="Admin"):
+class Admin(commands.Cog, name="Owner"):
     """Owner-only bot management commands."""
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -437,15 +440,33 @@ class Admin(commands.Cog, name="Admin"):
     @commands.command(name="cogs")
     @commands.is_owner()
     async def list_cogs(self, ctx: commands.Context) -> None:
-        """List all currently loaded extensions.
+        """List all currently loaded extensions and their display names.
 
         **Owner only.**
         """
-        loaded = sorted(self.bot.extensions.keys())
-        lines = "\n".join(f"`{e}`" for e in loaded) if loaded else "None"
+        if not self.bot.extensions:
+            embed = self._info("Loaded Extensions — 0", "None")
+            await ctx.send(embed=embed)
+            return
+
+        # Build a reverse map: module path → cog display name (one pass over cogs).
+        module_to_name: dict[str, str] = {
+            getattr(type(cog), "__module__", ""): cog.qualified_name
+            for cog in self.bot.cogs.values()
+            if getattr(type(cog), "__module__", "")
+        }
+
+        lines = []
+        for ext_key in sorted(self.bot.extensions.keys()):
+            friendly = module_to_name.get(ext_key)
+            if friendly:
+                lines.append(f"**{friendly}** — `{ext_key}`")
+            else:
+                lines.append(f"`{ext_key}`")
+
         embed = self._info(
-            f"Loaded Extensions — {len(loaded)}",
-            lines,
+            f"Loaded Extensions — {len(lines)}",
+            "\n".join(lines),
         )
         await ctx.send(embed=embed)
 

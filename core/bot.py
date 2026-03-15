@@ -19,6 +19,7 @@ import discord
 from discord.ext import commands
 
 from .cog_manager import CogManager
+from .health import HealthServer
 from .help_command import VantageHelp
 
 log = logging.getLogger("vprod")
@@ -37,6 +38,7 @@ class VantageBot(commands.Bot):
         self.config = config
         self.cog_manager = CogManager()
         self.start_time: Optional[datetime] = None
+        self._health_server: Optional[HealthServer] = None
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -60,6 +62,19 @@ class VantageBot(commands.Bot):
         # Make all repos importable
         self.cog_manager.setup_paths()
 
+        # Start health-check HTTP server if a port is configured
+        health_port = int(self.config.get("health_port", 8080))
+        if health_port > 0:
+            self._health_server = HealthServer(self, health_port)
+            try:
+                await self._health_server.start()
+            except Exception:
+                log.exception(
+                    "Failed to start health server on port %d — continuing without it.",
+                    health_port,
+                )
+                self._health_server = None
+
         # Always load built-in extensions
         for ext in BUILTIN_EXTENSIONS:
             try:
@@ -75,6 +90,12 @@ class VantageBot(commands.Bot):
                 log.info("Autoloaded cog: %s", cog_path)
             except Exception:
                 log.exception("Failed to autoload cog: %s", cog_path)
+
+    async def close(self) -> None:
+        """Gracefully shut down the health server before disconnecting."""
+        if self._health_server is not None:
+            await self._health_server.stop()
+        await super().close()
 
     async def on_ready(self) -> None:
         self.start_time = datetime.now(timezone.utc)
@@ -254,5 +275,11 @@ class VantageBot(commands.Bot):
         embed.set_footer(text=f"Command: {ctx.invoked_with}")
         try:
             await ctx.send(embed=embed)
-        except discord.HTTPException:
-            pass
+        except discord.HTTPException as exc:
+            log.warning(
+                "Could not send error embed for command '%s' (%s: %s): %s",
+                ctx.command,
+                title,
+                desc,
+                exc,
+            )

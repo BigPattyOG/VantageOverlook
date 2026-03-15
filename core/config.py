@@ -73,6 +73,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "description": "vprod — Vantage Discord Bot",
     "status": "online",
     "activity": "{prefix}help for commands",
+    # Health-check endpoint — set health_port to 0 to disable.
+    # health_host defaults to 127.0.0.1 (localhost); set to 0.0.0.0
+    # to expose to external interfaces (e.g. for a remote monitoring service).
+    "health_port": 8080,
+    "health_host": "127.0.0.1",
 }
 
 
