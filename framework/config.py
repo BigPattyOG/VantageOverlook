@@ -7,7 +7,7 @@ variable (or from a ``.env`` file in the project root via python-dotenv).
 Data directory resolution order
 --------------------------------
 1. ``VPROD_DATA_DIR`` environment variable (explicit override).
-2. ``/var/lib/vprod/`` when the code lives under ``/opt/vprod/``.
+2. ``/var/lib/<name>/`` when the code lives under ``/opt/<name>/`` (e.g. ``/opt/vprod/`` or ``/opt/vdev/``).
 3. Local ``data/`` directory (development fallback).
 """
 
@@ -17,6 +17,43 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+def resolve_data_dir() -> Path:
+    """Return the data directory to use for this bot instance.
+
+    Resolution order:
+
+    1. ``VPROD_DATA_DIR`` environment variable — explicit override.
+    2. ``/var/lib/<install-dir-name>/`` when this file is located under
+       ``/opt/<install-dir-name>/`` (production layout — works for both
+       ``/opt/vprod/`` and ``/opt/vdev/`` installs).
+    3. ``data/`` relative to the project root (development fallback).
+    """
+    # 1 — explicit env var
+    env_dir = os.environ.get("VPROD_DATA_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir)
+
+    # 2 — production layout: code lives under /opt/<name>/
+    # Use the install directory name so both /opt/vprod → /var/lib/vprod
+    # and /opt/vdev → /var/lib/vdev work without extra configuration.
+    this_file = Path(__file__).resolve()
+    try:
+        install_dir = this_file.parents[1]  # e.g. /opt/vprod or /opt/vdev
+        if install_dir.parent == Path("/opt"):
+            candidate = Path("/var/lib") / install_dir.name
+            if candidate.exists():
+                return candidate
+    except Exception:
+        pass
+
+    # 3 — development fallback: data/ next to the project root
+    return Path(__file__).resolve().parents[1] / "data"
+
+
+DATA_DIR = resolve_data_dir()
+CONFIG_PATH = DATA_DIR / "config.json"
 
 
 def _load_dotenv() -> None:
@@ -45,40 +82,6 @@ def _load_dotenv() -> None:
 
 
 _load_dotenv()
-
-
-def resolve_data_dir() -> Path:
-    """Return the data directory to use for this bot instance.
-
-    Resolution order:
-
-    1. ``VPROD_DATA_DIR`` environment variable — explicit override.
-    2. ``/var/lib/vprod/`` when this file is located under
-       ``/opt/vprod/`` (production layout).
-    3. ``data/`` relative to the project root (development fallback).
-    """
-    # 1 — explicit env var
-    env_dir = os.environ.get("VPROD_DATA_DIR", "").strip()
-    if env_dir:
-        return Path(env_dir)
-
-    # 2 — production layout: code lives at /opt/vprod/
-    this_file = Path(__file__).resolve()
-    try:
-        opt_vprod = Path("/opt/vprod")
-        parts = this_file.parts
-        opt_parts = opt_vprod.parts
-        if parts[: len(opt_parts)] == opt_parts and len(parts) > len(opt_parts):
-            return Path("/var/lib/vprod")
-    except Exception:
-        pass
-
-    # 3 — development fallback: data/ next to the project root
-    return Path(__file__).resolve().parents[1] / "data"
-
-
-DATA_DIR = resolve_data_dir()
-CONFIG_PATH = DATA_DIR / "config.json"
 
 
 def resolve_ext_plugins_dir(config: Optional[Dict[str, Any]] = None) -> Path:
