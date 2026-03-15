@@ -245,6 +245,7 @@ create_venv() {
     local pip_out pip_err
     pip_out=$(mktemp)
     pip_err=$(mktemp)
+    chown "$BOT_USER" "$pip_out" "$pip_err"
     sudo -u "$BOT_USER" bash -lc "
         set -Eeuo pipefail
         cd '$APP_DIR'
