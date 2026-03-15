@@ -24,6 +24,7 @@ import logging
 import platform
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -32,11 +33,14 @@ from discord.ext import commands
 
 log = logging.getLogger("vprod.admin")
 
-EMBED_COLOUR = discord.Color.from_str("#2DC5C5")  # Vantage teal
-GREEN = discord.Color.green()
-RED = discord.Color.red()
-GOLD = discord.Color.gold()
-TEAL = discord.Color.from_str("#2DC5C5")
+TEAL    = discord.Color.from_str("#2DC5C5")   # Vantage teal (primary)
+GREEN   = discord.Color.green()
+RED     = discord.Color.red()
+GOLD    = discord.Color.gold()
+BLURPLE = discord.Color.blurple()
+
+# Alias used throughout for consistency
+EMBED_COLOUR = TEAL
 
 
 # ── Management panel view ─────────────────────────────────────────────────────
@@ -47,6 +51,7 @@ class VManageView(discord.ui.View):
     def __init__(self, bot: commands.Bot) -> None:
         super().__init__(timeout=300)
         self.bot = bot
+        self.message: Optional[discord.Message] = None
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -215,6 +220,11 @@ class VManageView(discord.ui.View):
     async def on_timeout(self) -> None:
         for item in self.children:
             item.disabled = True  # type: ignore[attr-defined]
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 # ── Helper: build the vmanage embed ──────────────────────────────────────────
@@ -234,14 +244,15 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     prefix = cfg.get("prefix", "!")
 
     # Service status via systemctl
-    svc_result = subprocess.run(
-        ["systemctl", "is-active", service_name],
-        capture_output=True, text=True, timeout=5,
-    )
-    svc_active = svc_result.returncode == 0
-    svc_status = (
-        "**running**" if svc_active else "**stopped**"
-    )
+    try:
+        svc_result = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            capture_output=True, text=True, timeout=5,
+        )
+        svc_active = svc_result.returncode == 0
+    except FileNotFoundError:
+        svc_active = False
+    svc_status = "🟢 **running**" if svc_active else "🔴 **stopped**"
 
     # Uptime
     uptime_str = "N/A"
@@ -258,42 +269,43 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     # Latency
     latency_ms = round(bot.latency * 1000)
 
-    # discord.py version
+    # discord.py / python versions
     dpy_ver = discord.__version__
     py_ver = platform.python_version()
 
     embed = discord.Embed(
-        title=f"{bot_name} — Management Panel",
-        color=EMBED_COLOUR,
+        title=f"⚙️  {bot_name} — Management Panel",
+        color=TEAL,
+        timestamp=datetime.now(timezone.utc),
     )
     if bot.user:
         embed.set_thumbnail(url=bot.user.display_avatar.url)
 
     embed.add_field(
-        name="Bot",
+        name="🤖  Bot",
         value=(
-            f"**Name:** {bot.user} \n"
+            f"**Name:** {bot.user}\n"
             f"**ID:** `{bot.user.id}`\n"
             f"**Prefix:** `{prefix}`"
         ) if bot.user else "N/A",
         inline=True,
     )
     embed.add_field(
-        name="Stats",
+        name="📊  Stats",
         value=(
-            f"**Guilds:** {guild_count}\n"
+            f"**Guilds:** {guild_count:,}\n"
             f"**Users:** {user_count:,}\n"
             f"**Latency:** {latency_ms} ms"
         ),
         inline=True,
     )
     embed.add_field(
-        name="Uptime",
+        name="⏱️  Uptime",
         value=uptime_str,
         inline=True,
     )
     embed.add_field(
-        name="Service",
+        name="🔧  Service",
         value=(
             f"**Status:** {svc_status}\n"
             f"**Unit:** `{service_name}.service`"
@@ -301,7 +313,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="Runtime",
+        name="🐍  Runtime",
         value=(
             f"**Python:** {py_ver}\n"
             f"**discord.py:** {dpy_ver}"
@@ -309,12 +321,11 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
         inline=True,
     )
     embed.add_field(
-        name="Cogs",
+        name="🧩  Extensions",
         value=f"{len(bot.extensions)} loaded",
         inline=True,
     )
-    embed.set_footer(text="Use the buttons below to control the bot  •  Panel expires after 5 min")
-    embed.timestamp = datetime.now(timezone.utc)
+    embed.set_footer(text="Use the buttons below to control the bot  •  Expires in 5 min")
     return embed
 
 
@@ -329,21 +340,42 @@ class Admin(commands.Cog, name="Admin"):
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _ok(self, description: str) -> discord.Embed:
-        return discord.Embed(description=description, color=GREEN)
+        return discord.Embed(
+            description=f"✅  {description}",
+            color=GREEN,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     def _err(self, description: str) -> discord.Embed:
-        return discord.Embed(description=description, color=RED)
+        return discord.Embed(
+            description=f"❌  {description}",
+            color=RED,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     def _info(self, title: str, description: str = "") -> discord.Embed:
-        return discord.Embed(title=title, description=description, color=EMBED_COLOUR)
+        return discord.Embed(
+            title=title,
+            description=description,
+            color=TEAL,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     # ── basic commands ────────────────────────────────────────────────────────
 
     @commands.command()
     async def ping(self, ctx: commands.Context) -> None:
-        """Check the bot's response time."""
-        latency_ms = round(self.bot.latency * 1000)
-        await ctx.send(embed=self._info("Pong!", f"API latency: **{latency_ms} ms**"))
+        """Check the bot's latency and response time."""
+        api_ms = round(self.bot.latency * 1000)
+        start = time.perf_counter()
+        msg = await ctx.send(
+            embed=discord.Embed(description="Measuring...", color=TEAL)
+        )
+        rtt_ms = round((time.perf_counter() - start) * 1000)
+        embed = discord.Embed(title="🏓  Pong!", color=TEAL)
+        embed.add_field(name="API Latency", value=f"`{api_ms} ms`", inline=True)
+        embed.add_field(name="Round-trip", value=f"`{rtt_ms} ms`", inline=True)
+        await msg.edit(embed=embed)
 
     @commands.command()
     @commands.is_owner()
@@ -356,14 +388,14 @@ class Admin(commands.Cog, name="Admin"):
         try:
             await self.bot.load_extension(extension)
             log.info("Loaded extension: %s (by %s)", extension, ctx.author)
-            await ctx.send(embed=self._ok(f"Loaded `{extension}`."))
+            await ctx.send(embed=self._ok(f"Loaded **{extension}**."))
         except commands.ExtensionAlreadyLoaded:
-            await ctx.send(embed=self._err(f"`{extension}` is already loaded."))
+            await ctx.send(embed=self._err(f"**{extension}** is already loaded."))
         except commands.ExtensionNotFound:
-            await ctx.send(embed=self._err(f"Extension `{extension}` not found."))
+            await ctx.send(embed=self._err(f"Extension **{extension}** was not found."))
         except Exception as exc:
             log.exception("Failed to load extension: %s", extension)
-            await ctx.send(embed=self._err(f"Failed to load `{extension}`:\n```\n{exc}\n```"))
+            await ctx.send(embed=self._err(f"Failed to load **{extension}**:\n```\n{exc}\n```"))
 
     @commands.command()
     @commands.is_owner()
@@ -378,12 +410,12 @@ class Admin(commands.Cog, name="Admin"):
         try:
             await self.bot.unload_extension(extension)
             log.info("Unloaded extension: %s (by %s)", extension, ctx.author)
-            await ctx.send(embed=self._ok(f"Unloaded `{extension}`."))
+            await ctx.send(embed=self._ok(f"Unloaded **{extension}**."))
         except commands.ExtensionNotLoaded:
-            await ctx.send(embed=self._err(f"`{extension}` is not currently loaded."))
+            await ctx.send(embed=self._err(f"**{extension}** is not currently loaded."))
         except Exception as exc:
             log.exception("Failed to unload extension: %s", extension)
-            await ctx.send(embed=self._err(f"Failed to unload `{extension}`:\n```\n{exc}\n```"))
+            await ctx.send(embed=self._err(f"Failed to unload **{extension}**:\n```\n{exc}\n```"))
 
     @commands.command()
     @commands.is_owner()
@@ -395,12 +427,12 @@ class Admin(commands.Cog, name="Admin"):
         try:
             await self.bot.reload_extension(extension)
             log.info("Reloaded extension: %s (by %s)", extension, ctx.author)
-            await ctx.send(embed=self._ok(f"Reloaded `{extension}`."))
+            await ctx.send(embed=self._ok(f"Reloaded **{extension}**."))
         except commands.ExtensionNotLoaded:
-            await ctx.send(embed=self._err(f"`{extension}` is not loaded. Use `load` first."))
+            await ctx.send(embed=self._err(f"**{extension}** is not loaded — use `load` first."))
         except Exception as exc:
             log.exception("Failed to reload extension: %s", extension)
-            await ctx.send(embed=self._err(f"Failed to reload `{extension}`:\n```\n{exc}\n```"))
+            await ctx.send(embed=self._err(f"Failed to reload **{extension}**:\n```\n{exc}\n```"))
 
     @commands.command(name="cogs")
     @commands.is_owner()
@@ -410,9 +442,10 @@ class Admin(commands.Cog, name="Admin"):
         **Owner only.**
         """
         loaded = sorted(self.bot.extensions.keys())
+        lines = "\n".join(f"`{e}`" for e in loaded) if loaded else "None"
         embed = self._info(
-            f"Loaded Extensions ({len(loaded)})",
-            "\n".join(f"`{e}`" for e in loaded) if loaded else "None",
+            f"Loaded Extensions — {len(loaded)}",
+            lines,
         )
         await ctx.send(embed=embed)
 
@@ -471,7 +504,7 @@ class Admin(commands.Cog, name="Admin"):
 
         embed = await _build_vmanage_embed(self.bot)
         view = VManageView(self.bot)
-        await ctx.send(embed=embed, view=view)
+        view.message = await ctx.send(embed=embed, view=view)
 
     # ── servers ───────────────────────────────────────────────────────────────
 
@@ -506,9 +539,10 @@ class Admin(commands.Cog, name="Admin"):
         total = len(guilds)
         for i, content in enumerate(pages, 1):
             embed = discord.Embed(
-                title=f"Guilds ({total}) — page {i}/{len(pages)}",
+                title=f"🏠  Guilds ({total}) — page {i}/{len(pages)}",
                 description=content or "None",
-                color=EMBED_COLOUR,
+                color=TEAL,
+                timestamp=datetime.now(timezone.utc),
             )
             await ctx.send(embed=embed)
 
@@ -538,15 +572,15 @@ class Admin(commands.Cog, name="Admin"):
             uptime_str = f"{h}h {m}m {s}s"
 
         embed = discord.Embed(
-            title=f"{bot_name} — Statistics",
-            color=EMBED_COLOUR,
+            title=f"📊  {bot_name} — Statistics",
+            color=TEAL,
             timestamp=datetime.now(timezone.utc),
         )
         if self.bot.user:
             embed.set_thumbnail(url=self.bot.user.display_avatar.url)
 
         embed.add_field(
-            name="Reach",
+            name="🌐  Reach",
             value=(
                 f"**Guilds:** {guild_count:,}\n"
                 f"**Users:** {user_count:,}\n"
@@ -556,17 +590,17 @@ class Admin(commands.Cog, name="Admin"):
             inline=True,
         )
         embed.add_field(
-            name="Bot",
+            name="🤖  Bot",
             value=(
                 f"**Latency:** {latency_ms} ms\n"
                 f"**Uptime:** {uptime_str}\n"
-                f"**Cogs loaded:** {cog_count}\n"
+                f"**Extensions:** {cog_count}\n"
                 f"**Commands:** {cmd_count}"
             ),
             inline=True,
         )
         embed.add_field(
-            name="Runtime",
+            name="🐍  Runtime",
             value=(
                 f"**Python:** {platform.python_version()}\n"
                 f"**discord.py:** {discord.__version__}\n"
@@ -594,7 +628,7 @@ class Admin(commands.Cog, name="Admin"):
         skipped = 0
 
         embed = discord.Embed(
-            title="Announcement",
+            title="📢  Announcement",
             description=message,
             color=GOLD,
             timestamp=datetime.now(timezone.utc),
@@ -616,8 +650,8 @@ class Admin(commands.Cog, name="Admin"):
 
         summary = self._ok(
             f"Announcement sent to **{sent}** guild(s).\n"
-            f"Skipped (no system channel): **{skipped}**\n"
-            f"Failed (no permission): **{failed}**"
+            f"Skipped — no system channel: **{skipped}**\n"
+            f"Failed — no permission: **{failed}**"
         )
         await ctx.send(embed=summary)
 
@@ -647,17 +681,18 @@ class Admin(commands.Cog, name="Admin"):
             {prefix}setactivity watching over {guild_count} servers
         """
         type_map = {
-            "playing": discord.ActivityType.playing,
-            "watching": discord.ActivityType.watching,
-            "listening": discord.ActivityType.listening,
-            "competing": discord.ActivityType.competing,
+            "playing":    discord.ActivityType.playing,
+            "watching":   discord.ActivityType.watching,
+            "listening":  discord.ActivityType.listening,
+            "competing":  discord.ActivityType.competing,
         }
         act_type = type_map.get(activity_type.lower())
         if act_type is None:
+            valid = ", ".join(f"`{k}`" for k in type_map)
             await ctx.send(
                 embed=self._err(
-                    f"Unknown activity type `{activity_type}`.\n"
-                    "Choose: `playing`, `watching`, `listening`, `competing`."
+                    f"Unknown activity type **{activity_type}**.\n"
+                    f"Valid types: {valid}."
                 )
             )
             return
@@ -689,16 +724,17 @@ class Admin(commands.Cog, name="Admin"):
         description = cfg.get("description", "")
 
         embed = discord.Embed(
-            title=f"About {bot_name}",
+            title=f"ℹ️  About {bot_name}",
             description=description,
-            color=EMBED_COLOUR,
+            color=TEAL,
+            timestamp=datetime.now(timezone.utc),
         )
         if self.bot.user:
             embed.set_thumbnail(url=self.bot.user.display_avatar.url)
         embed.add_field(name="Prefix", value=f"`{prefix}`", inline=True)
-        embed.add_field(name="Guilds", value=str(len(self.bot.guilds)), inline=True)
+        embed.add_field(name="Guilds", value=f"{len(self.bot.guilds):,}", inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
-        embed.set_footer(text=f"Powered by vprod | Python {platform.python_version()}")
+        embed.set_footer(text=f"Powered by vprod  •  Python {platform.python_version()}")
         await ctx.send(embed=embed)
 
 

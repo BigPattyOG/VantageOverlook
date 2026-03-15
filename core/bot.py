@@ -25,8 +25,9 @@ log = logging.getLogger("vprod")
 
 BUILTIN_EXTENSIONS = ["cogs.admin"]
 
-# Teal — primary brand colour used for all non-error embeds
-TEAL = discord.Color.from_str("#2DC5C5")
+# Colours used for embeds
+TEAL = discord.Color.from_str("#2DC5C5")   # primary brand colour
+RED = discord.Color.red()                   # errors
 
 
 class VantageBot(commands.Bot):
@@ -94,8 +95,23 @@ class VantageBot(commands.Bot):
     ) -> None:
         """Global error handler — sends a user-friendly embed for common errors."""
 
+        # Unwrap CommandInvokeError so each branch below can match the real
+        # cause and give users a specific, actionable error message.
+        if isinstance(error, commands.CommandInvokeError):
+            error = error.original  # type: ignore[assignment]
+
         if isinstance(error, commands.CommandNotFound):
             return  # Silently ignore unknown commands
+
+        if isinstance(error, commands.DisabledCommand):
+            await self._send_error(ctx, "Command Disabled", "This command is currently disabled.")
+            return
+
+        if isinstance(error, commands.NoPrivateMessage):
+            await self._send_error(
+                ctx, "Server Only", "This command can only be used inside a server."
+            )
+            return
 
         if isinstance(error, commands.MissingRequiredArgument):
             await self._send_error(
@@ -106,41 +122,71 @@ class VantageBot(commands.Bot):
             )
             return
 
+        if isinstance(error, commands.TooManyArguments):
+            await self._send_error(
+                ctx,
+                "Too Many Arguments",
+                f"Usage: `{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`",
+            )
+            return
+
         if isinstance(error, commands.BadArgument):
             await self._send_error(ctx, "Bad Argument", str(error))
             return
 
+        if isinstance(error, commands.BadUnionArgument):
+            await self._send_error(ctx, "Bad Argument", str(error))
+            return
+
         if isinstance(error, commands.MissingPermissions):
-            perms = ", ".join(error.missing_permissions)
+            perms = ", ".join(
+                p.replace("_", " ").title() for p in error.missing_permissions
+            )
             await self._send_error(
-                ctx, "Missing Permissions", f"You need **{perms}** to use this command."
+                ctx, "Missing Permissions", f"You need the **{perms}** permission(s) to run this command."
             )
             return
 
         if isinstance(error, commands.BotMissingPermissions):
-            perms = ", ".join(error.missing_permissions)
+            perms = ", ".join(
+                p.replace("_", " ").title() for p in error.missing_permissions
+            )
             await self._send_error(
-                ctx, "Bot Missing Permissions", f"I need **{perms}** to do that."
+                ctx, "Bot Missing Permissions", f"I need the **{perms}** permission(s) to do that."
             )
             return
 
         if isinstance(error, commands.NotOwner):
-            await self._send_error(ctx, "Owner Only", "This command is restricted to bot owners.")
+            await self._send_error(
+                ctx, "Owner Only", "This command is restricted to bot owners."
+            )
             return
 
-        if isinstance(error, commands.CheckFailure):
-            await self._send_error(ctx, "Access Denied", "You don't have permission to run this command.")
+        if isinstance(error, commands.MaxConcurrencyReached):
+            per_name = error.per.name.replace("_", " ")
+            await self._send_error(
+                ctx,
+                "Too Many Active Uses",
+                f"This command can only be run **{error.number}** time(s) at once per {per_name}. "
+                "Please wait for it to finish.",
+            )
             return
 
         if isinstance(error, commands.CommandOnCooldown):
             await self._send_error(
                 ctx,
                 "On Cooldown",
-                f"Try again in **{error.retry_after:.1f}s**.",
+                f"You're using this command too fast. Try again in **{error.retry_after:.1f}s**.",
             )
             return
 
-        # Unexpected error — log full traceback
+        if isinstance(error, commands.CheckFailure):
+            await self._send_error(
+                ctx, "Access Denied", "You don't have permission to run this command."
+            )
+            return
+
+        # Unexpected error — log full traceback, send a generic response
         log.error(
             "Unhandled error in command '%s': %s",
             ctx.command,
@@ -149,7 +195,8 @@ class VantageBot(commands.Bot):
         await self._send_error(
             ctx,
             "Unexpected Error",
-            "An unexpected error occurred. Please try again later.",
+            "An unexpected error occurred. Please try again later.\n"
+            "If this keeps happening, let the server owner know.",
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────
@@ -198,5 +245,14 @@ class VantageBot(commands.Bot):
             )
 
     async def _send_error(self, ctx: commands.Context, title: str, desc: str) -> None:
-        embed = discord.Embed(title=title, description=desc, color=discord.Color.red())
-        await ctx.send(embed=embed)
+        embed = discord.Embed(
+            title=f"❌  {title}",
+            description=desc,
+            color=RED,
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_footer(text=f"Command: {ctx.invoked_with}")
+        try:
+            await ctx.send(embed=embed)
+        except discord.HTTPException:
+            pass

@@ -236,13 +236,19 @@ def do_start(bot: BotInstance, debug: bool = False) -> None:
     info(f"Starting {bold(bot.service_name)}...")
     r = subprocess.run(["sudo", "systemctl", "start", bot.service_name])
     if r.returncode != 0:
-        die(f"Failed to start service.  Try manually:\n  sudo systemctl start {bot.service_name}")
+        die(
+            f"Failed to start service.\n"
+            f"  Check logs: {bold('vmanage --logs')}\n"
+            f"  Or try:    {bold(f'sudo systemctl start {bot.service_name}')}"
+        )
     time.sleep(1.5)
     if bot.is_running():
         ok(f"{bold(bot.name)} is {teal(bold('running'))}.")
     else:
-        warn(f"Service started but may not be active yet.\n"
-             f"  Check logs: vmanage --logs")
+        warn(
+            "Service started but may not be active yet.\n"
+            f"  Check logs: {bold('vmanage --logs')}"
+        )
 
 
 def do_stop(bot: BotInstance, debug: bool = False) -> None:
@@ -250,7 +256,10 @@ def do_stop(bot: BotInstance, debug: bool = False) -> None:
     info(f"Stopping {bold(bot.service_name)}...")
     r = subprocess.run(["sudo", "systemctl", "stop", bot.service_name])
     if r.returncode != 0:
-        die(f"Failed to stop service.  Try:\n  sudo systemctl stop {bot.service_name}")
+        die(
+            f"Failed to stop service.\n"
+            f"  Try: {bold(f'sudo systemctl stop {bot.service_name}')}"
+        )
     ok(f"{bold(bot.name)} stopped.")
 
 
@@ -259,13 +268,19 @@ def do_restart(bot: BotInstance, debug: bool = False) -> None:
     info(f"Restarting {bold(bot.service_name)}...")
     r = subprocess.run(["sudo", "systemctl", "restart", bot.service_name])
     if r.returncode != 0:
-        die(f"Failed to restart service.")
+        die(
+            f"Failed to restart service.\n"
+            f"  Check logs: {bold('vmanage --logs')}\n"
+            f"  Or try:    {bold(f'sudo systemctl restart {bot.service_name}')}"
+        )
     time.sleep(1.5)
     if bot.is_running():
         ok(f"{bold(bot.name)} restarted — {teal(bold('running'))}.")
     else:
-        warn(f"Service restarted but may not be active yet.\n"
-             f"  Check logs: vmanage --logs")
+        warn(
+            "Service restarted but may not be active yet.\n"
+            f"  Check logs: {bold('vmanage --logs')}"
+        )
 
 
 def do_status(bot: BotInstance, debug: bool = False) -> None:
@@ -300,7 +315,8 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
     if not yes:
         try:
             ans = input(
-                f"\n  Update {bold(bot.name)}? This will git pull + pip upgrade + restart. [y/N] "
+                f"\n  Update {bold(bot.name)}? "
+                f"This will git pull + pip upgrade + restart. [y/N] "
             )
         except EOFError:
             ans = ""
@@ -313,7 +329,9 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
         ["sudo", "-u", BOT_USER, "git", "-C", str(bot.install_dir), "pull", "--ff-only"]
     )
     if r.returncode != 0:
-        warn("git pull failed — repository may be up-to-date or have local changes.")
+        warn("git pull did not fast-forward -- repository may be up-to-date or have local changes.")
+    else:
+        ok("Code updated.")
     print()
     if bot.has_venv():
         info("Upgrading Python dependencies...")
@@ -333,7 +351,7 @@ def do_repos(bot: BotInstance, debug: bool = False) -> None:
         die("Virtual environment not found.")
     info(f"Cog repositories — {bold(bot.name)}:")
     print()
-    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py repos list")
+    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "repos", "list")
 
 
 def do_cogs(bot: BotInstance, debug: bool = False) -> None:
@@ -341,7 +359,7 @@ def do_cogs(bot: BotInstance, debug: bool = False) -> None:
         die("Virtual environment not found.")
     info(f"Installed cogs — {bold(bot.name)}:")
     print()
-    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py cogs list")
+    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "cogs", "list")
 
 
 # ── status dashboard ───────────────────────────────────────────────────────────
@@ -350,12 +368,13 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     """Print a rich single-page status dashboard for the bot."""
     print_banner(f"{bold(bot.name)}  {dim('—')}  {str(bot.install_dir)}")
 
-    SEP = dim("─" * 58)
-    print(f"  {SEP}")
+    W = 60
+    SEP = dim("─" * W)
 
-    # Service status
+    # ── Service status ────────────────────────────────────────────────────────
     running = bot.is_running()
     state   = bot.active_state()
+
     if running:
         status_str = f"{teal('●')} {teal(bold('running'))}"
     elif state in ("activating", "deactivating", "reloading"):
@@ -363,59 +382,78 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
     else:
         status_str = f"{red('●')} {red(bold(state or 'stopped'))}"
 
-    print(f"  Service status : {status_str}")
+    print(f"  {SEP}")
+    print(f"  {bold('Status')}")
+    print(f"  {SEP}")
+    print(f"  {'Service status':<18} {status_str}")
 
     if running:
         uptime = bot.uptime()
         if uptime:
-            print(f"  Uptime         : {teal(uptime)}")
+            print(f"  {'Uptime':<18} {teal(uptime)}")
 
-    print(f"  Service unit   : {dim(bot.service_name + '.service')}")
-    print(f"  Install dir    : {dim(str(bot.install_dir))}")
-    print(f"  Data dir       : {dim(str(DATA_DIR))}")
+    print(f"  {'Service unit':<18} {dim(bot.service_name + '.service')}")
+    print()
 
-    # Config
+    # ── Paths ─────────────────────────────────────────────────────────────────
+    print(f"  {bold('Paths')}")
+    print(f"  {SEP}")
+    print(f"  {'Install dir':<18} {dim(str(bot.install_dir))}")
+    print(f"  {'Data dir':<18} {dim(str(DATA_DIR))}")
+    print()
+
+    # ── Config ────────────────────────────────────────────────────────────────
+    print(f"  {bold('Configuration')}")
+    print(f"  {SEP}")
     if bot.config:
         owners = bot.config.get("owner_ids", [])
+        description = bot.config.get("description", "")
         print(
-            f"  Config         : {teal('found')}  "
-            f"{dim(f'prefix: {bold(bot.prefix)}, owners: {len(owners)}')}"
+            f"  {'Config':<18} {teal('found')}  "
+            f"{dim(f'prefix={bold(bot.prefix)}, owners={len(owners)}')}"
         )
+        if description:
+            print(f"  {'Description':<18} {dim(description)}")
     else:
         print(
-            f"  Config         : {red('missing')}  "
+            f"  {'Config':<18} {red('missing')}  "
             f"{dim('create /var/lib/vprod/config.json')}"
         )
 
     # Python / venv
     py_ver = bot.python_version()
     if py_ver:
-        print(f"  Python         : {teal(py_ver)}  {dim('(venv active)')}")
+        print(f"  {'Python':<18} {teal(py_ver)}  {dim('(venv active)')}")
     else:
-        print(f"  Python         : {red('venv not found')}  {dim('— set up venv manually')}")
+        print(f"  {'Python':<18} {red('venv not found')}  {dim('run: install.sh or create venv manually')}")
 
-    # Token
-    if not bot.has_token():
-        print(f"  Token          : {red('NOT SET')}  {dim('— set DISCORD_TOKEN in /opt/vprod/.env')}")
+    # Token check
+    if bot.has_token():
+        print(f"  {'Discord token':<18} {teal('set')}")
+    else:
+        print(f"  {'Discord token':<18} {red('NOT SET')}  {dim('set DISCORD_TOKEN in /opt/vprod/.env')}")
 
-    print(f"  {SEP}\n")
+    print()
 
-    # Quick reference
-    print(f"  {bold('Commands:')}\n")
+    # ── Quick reference ───────────────────────────────────────────────────────
+    print(f"  {bold('Commands')}")
+    print(f"  {SEP}")
     pairs = [
         ("Start",            "vmanage --start"),
         ("Stop",             "vmanage --stop"),
         ("Restart",          "vmanage --restart"),
         ("Full status",      "vmanage --status"),
         ("Stream logs",      "vmanage --logs"),
-        ("Last 50 lines",    "vmanage --logs --lines 50"),
+        ("Last N lines",     "vmanage --logs --lines 50"),
         ("Update & restart", "vmanage --update"),
         ("List cogs",        "vmanage --cogs"),
         ("List repos",       "vmanage --repos"),
+        ("Debug info",       "vmanage --debug"),
     ]
     label_w = max(len(lb) for lb, _ in pairs)
     for label, cmd in pairs:
         print(f"  {dim(label + ':'):<{label_w + 10}} {bold(cmd)}")
+    print(f"  {SEP}")
     print()
 
 
