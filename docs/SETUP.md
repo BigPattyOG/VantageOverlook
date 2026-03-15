@@ -223,10 +223,3 @@ git pull
 
 ---
 
-## Appendix: Automated CI/CD with GitHub Actions (optional)
-
-If you want code pushes to automatically deploy to your server without you SSHing in manually, the repo includes GitHub Actions workflow files. This requires giving GitHub an SSH key to reach your server.
-
-**This is completely optional.** The curl install approach above is recommended for most people.
-
-See the workflows in `.github/workflows/` and [TOKEN_MANAGEMENT.md](TOKEN_MANAGEMENT.md#automated-deploys-github-actions-optional) if you want to set this up.
