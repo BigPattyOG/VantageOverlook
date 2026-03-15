@@ -16,8 +16,8 @@ Usage
     vmanage --logs                   Stream live logs  (Ctrl+C to stop)
     vmanage --logs --lines 50        Show last 50 log lines (non-streaming)
     vmanage --update                 git pull + pip upgrade + restart
-    vmanage --repos                  List cog repositories
-    vmanage --cogs                   List installed cogs
+    vmanage --repos                  List plugin repositories
+    vmanage --plugins                   List installed plugins
     vmanage --debug                  Show verbose debug output
     vmanage --yes                    Skip confirmation prompts
 """
@@ -349,17 +349,17 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
 def do_repos(bot: BotInstance, debug: bool = False) -> None:
     if not bot.has_venv():
         die("Virtual environment not found.")
-    info(f"Cog repositories — {bold(bot.name)}:")
+    info(f"Plugin repositories — {bold(bot.name)}:")
     print()
     _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "repos", "list")
 
 
-def do_cogs(bot: BotInstance, debug: bool = False) -> None:
+def do_plugins(bot: BotInstance, debug: bool = False) -> None:
     if not bot.has_venv():
         die("Virtual environment not found.")
-    info(f"Installed cogs — {bold(bot.name)}:")
+    info(f"Installed plugins — {bold(bot.name)}:")
     print()
-    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "cogs", "list")
+    _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "plugins", "list")
 
 
 # ── status dashboard ───────────────────────────────────────────────────────────
@@ -446,7 +446,7 @@ def do_dashboard(bot: BotInstance, debug: bool = False) -> None:
         ("Stream logs",      "vmanage --logs"),
         ("Last N lines",     "vmanage --logs --lines 50"),
         ("Update & restart", "vmanage --update"),
-        ("List cogs",        "vmanage --cogs"),
+        ("List plugins",        "vmanage --plugins"),
         ("List repos",       "vmanage --repos"),
         ("Debug info",       "vmanage --debug"),
     ]
@@ -478,8 +478,8 @@ Examples:
   vmanage --logs --lines 100    Show last 100 lines, non-streaming
   vmanage --update              Pull latest code and restart
   vmanage --update --yes        Same, skip confirmation
-  vmanage --cogs                List installed cogs
-  vmanage --repos               List cog repositories
+  vmanage --plugins                List installed plugins
+  vmanage --repos               List plugin repositories
   vmanage --debug               Show verbose debug information
 """,
     )
@@ -497,8 +497,8 @@ Examples:
                     help="Stream live logs (combine with --lines for non-streaming)")
     mx.add_argument("--update",  action="store_true",
                     help="git pull + pip upgrade + restart")
-    mx.add_argument("--repos",   action="store_true", help="List cog repositories")
-    mx.add_argument("--cogs",    action="store_true", help="List installed cogs")
+    mx.add_argument("--repos",   action="store_true", help="List plugin repositories")
+    mx.add_argument("--plugins",    action="store_true", help="List installed plugins")
 
     # ── modifiers ─────────────────────────────────────────────────────────────
     mod = p.add_argument_group("modifiers")
@@ -548,8 +548,8 @@ def main() -> None:
         do_update(bot, debug=args.debug, yes=args.yes)
     elif args.repos:
         do_repos(bot, args.debug)
-    elif args.cogs:
-        do_cogs(bot, args.debug)
+    elif args.plugins:
+        do_plugins(bot, args.debug)
     else:
         # No action flag → show status dashboard
         do_dashboard(bot, args.debug)

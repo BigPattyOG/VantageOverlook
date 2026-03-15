@@ -1,11 +1,12 @@
 """vprod — main bot class.
 
 Extends ``discord.ext.commands.Bot`` with:
-* CogManager integration (sys.path setup + autoload at startup).
-* Graceful error handling with embed responses.
+* PluginManager integration (sys.path setup + autoload at startup).
+* Graceful error handling with branded embed responses.
 * Dynamic prefix from config.
-* Built-in ``cogs.admin`` always loaded.
+* Built-in ``plugins.admin`` always loaded.
 * Owners resolved automatically from the Discord application/team.
+* Global maintenance mode — non-owners receive a maintenance notice.
 """
 
 from __future__ import annotations
@@ -18,14 +19,14 @@ from typing import Any, Dict, Optional
 import discord
 from discord.ext import commands
 
-from .cog_manager import CogManager
 from .embeds import VantageEmbed, GOLD
 from .health import HealthServer
 from .help_command import VantageHelp
+from .plugin_manager import PluginManager
 
 log = logging.getLogger("vprod")
 
-BUILTIN_EXTENSIONS = ["cogs.admin"]
+BUILTIN_EXTENSIONS = ["plugins.admin"]
 
 
 class VantageBot(commands.Bot):
@@ -33,7 +34,7 @@ class VantageBot(commands.Bot):
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
-        self.cog_manager = CogManager()
+        self.plugin_manager = PluginManager()
         self.start_time: Optional[datetime] = None
         self._health_server: Optional[HealthServer] = None
 
@@ -60,7 +61,7 @@ class VantageBot(commands.Bot):
         await self._sync_owner_ids()
 
         # Make all repos importable
-        self.cog_manager.setup_paths()
+        self.plugin_manager.setup_paths()
 
         # Start health-check HTTP server if a port is configured
         health_port = int(self.config.get("health_port", 8080))
@@ -83,13 +84,13 @@ class VantageBot(commands.Bot):
             except Exception:
                 log.exception("Failed to load built-in extension: %s", ext)
 
-        # Load user-configured autoload cogs
-        for cog_path in self.cog_manager.get_autoload():
+        # Load user-configured autoload plugins
+        for plugin_path in self.plugin_manager.get_autoload():
             try:
-                await self.load_extension(cog_path)
-                log.info("Autoloaded cog: %s", cog_path)
+                await self.load_extension(plugin_path)
+                log.info("Autoloaded plugin: %s", plugin_path)
             except Exception:
-                log.exception("Failed to autoload cog: %s", cog_path)
+                log.exception("Failed to autoload plugin: %s", plugin_path)
 
     async def close(self) -> None:
         """Gracefully shut down the health server before disconnecting."""
@@ -114,10 +115,9 @@ class VantageBot(commands.Bot):
     async def on_command_error(
         self, ctx: commands.Context, error: commands.CommandError
     ) -> None:
-        """Global error handler — sends a user-friendly embed for common errors."""
+        """Global error handler — sends a branded embed for common errors."""
 
-        # Unwrap CommandInvokeError so each branch below can match the real
-        # cause and give users a specific, actionable error message.
+        # Unwrap CommandInvokeError so each branch below can match the real cause.
         if isinstance(error, commands.CommandInvokeError):
             error = error.original  # type: ignore[assignment]
 
@@ -151,11 +151,7 @@ class VantageBot(commands.Bot):
             )
             return
 
-        if isinstance(error, commands.BadArgument):
-            await self._send_error(ctx, "Bad Argument", str(error))
-            return
-
-        if isinstance(error, commands.BadUnionArgument):
+        if isinstance(error, (commands.BadArgument, commands.BadUnionArgument)):
             await self._send_error(ctx, "Bad Argument", str(error))
             return
 
@@ -164,7 +160,8 @@ class VantageBot(commands.Bot):
                 p.replace("_", " ").title() for p in error.missing_permissions
             )
             await self._send_error(
-                ctx, "Missing Permissions", f"You need the **{perms}** permission(s) to run this command."
+                ctx, "Missing Permissions",
+                f"You need the **{perms}** permission(s) to run this command."
             )
             return
 
@@ -173,7 +170,8 @@ class VantageBot(commands.Bot):
                 p.replace("_", " ").title() for p in error.missing_permissions
             )
             await self._send_error(
-                ctx, "Bot Missing Permissions", f"I need the **{perms}** permission(s) to do that."
+                ctx, "Bot Missing Permissions",
+                f"I need the **{perms}** permission(s) to do that."
             )
             return
 
@@ -188,8 +186,8 @@ class VantageBot(commands.Bot):
             await self._send_error(
                 ctx,
                 "Too Many Active Uses",
-                f"This command can only be run **{error.number}** time(s) at once per {per_name}. "
-                "Please wait for it to finish.",
+                f"This command can only be run **{error.number}** time(s) at once per "
+                f"{per_name}. Please wait for it to finish.",
             )
             return
 
@@ -197,11 +195,21 @@ class VantageBot(commands.Bot):
             await self._send_error(
                 ctx,
                 "On Cooldown",
-                f"You're using this command too fast. Try again in **{error.retry_after:.1f}s**.",
+                f"You're using this command too fast. "
+                f"Try again in **{error.retry_after:.1f}s**.",
             )
             return
 
         if isinstance(error, commands.CheckFailure):
+            # Maintenance check raises CheckFailure — send the maintenance embed.
+            if self.config.get("maintenance", False):
+                msg = self.config.get("maintenance_message", "")
+                embed = VantageEmbed.maintenance(bot=self, message=msg)
+                try:
+                    await ctx.send(embed=embed)
+                except discord.HTTPException:
+                    pass
+                return
             await self._send_error(
                 ctx, "Access Denied", "You don't have permission to run this command."
             )
@@ -217,24 +225,32 @@ class VantageBot(commands.Bot):
             ctx,
             "Unexpected Error",
             "An unexpected error occurred. Please try again later.\n"
-            "If this keeps happening, let the server owner know.",
+            "If this keeps happening, let the bot owner know.",
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────
+
+    async def _maintenance_check(self, ctx: commands.Context) -> bool:
+        """Global check: block non-owner commands while maintenance is active."""
+        if not self.config.get("maintenance", False):
+            return True
+        if await self.is_owner(ctx.author):
+            return True
+        # Raise CheckFailure — on_command_error handles the response.
+        raise commands.CheckFailure("maintenance")
 
     async def _sync_owner_ids(self) -> None:
         """Fetch the application's owner(s) from Discord and update ``owner_ids``.
 
         Supports both single-owner and team-owned applications.  Any IDs
-        already present in the config are preserved so that the server
-        operator can add extra owners beyond the application owner.
+        already in the config are preserved so operators can add extra owners
+        beyond the application owner.
         """
         try:
             app_info = await self.application_info()
             discord_owner_ids: set[int] = set()
 
             if app_info.team:
-                # Team-owned application — only accepted members count as owners.
                 discord_owner_ids = {
                     m.id
                     for m in app_info.team.members
@@ -255,7 +271,6 @@ class VantageBot(commands.Bot):
             else:
                 log.warning("Discord application info returned no owner and no team.")
 
-            # Merge Discord owners with any extra IDs already in owner_ids
             self.owner_ids = discord_owner_ids | self.owner_ids
         except Exception:
             log.warning(
@@ -266,20 +281,14 @@ class VantageBot(commands.Bot):
             )
 
     async def _send_error(self, ctx: commands.Context, title: str, desc: str) -> None:
-        embed = discord.Embed(
-            title=f"❌  {title}",
-            description=desc,
-            color=RED,
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.set_footer(text=f"Command: {ctx.invoked_with}")
+        embed = VantageEmbed.error(title, desc, footer_extra=f"Command: {ctx.invoked_with}")
         try:
             await ctx.send(embed=embed)
         except discord.HTTPException as exc:
             log.warning(
-                "Could not send error embed for command '%s' (%s: %s): %s",
+                "Could not send error embed for command '%s' (%s): %s",
                 ctx.command,
                 title,
-                desc,
                 exc,
             )
+

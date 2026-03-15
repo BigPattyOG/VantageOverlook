@@ -5,18 +5,18 @@ Usage
 -----
 ::
 
-    python launcher.py start            # Run the bot
+    python launcher.py start              # Run the bot
 
-    python launcher.py repos list       # List registered repositories
-    python launcher.py repos add URL    # Clone a GitHub repo
-    python launcher.py repos add PATH   # Link a local repo
+    python launcher.py repos list         # List registered repositories
+    python launcher.py repos add URL      # Clone a GitHub repo
+    python launcher.py repos add PATH     # Link a local repo
     python launcher.py repos remove NAME
     python launcher.py repos update [NAME]
 
-    python launcher.py cogs list                   # List installed cogs
-    python launcher.py cogs install REPO COG       # Install a cog
-    python launcher.py cogs uninstall COG_PATH     # Uninstall a cog
-    python launcher.py cogs autoload COG_PATH      # Toggle autoload
+    python launcher.py plugins list                    # List installed plugins
+    python launcher.py plugins install REPO PLUGIN     # Install a plugin
+    python launcher.py plugins uninstall PLUGIN_PATH   # Uninstall a plugin
+    python launcher.py plugins autoload PLUGIN_PATH    # Toggle autoload
 
     python launcher.py system status               # Check system readiness
     python launcher.py system create-user          # Create system user and dev group (root)
@@ -40,9 +40,9 @@ _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from core.config import CONFIG_PATH, DATA_DIR, get_token, load_config, save_config
-from core.cog_manager import CogManager
-from core.log_setup import setup_logging as _setup_logging_core
+from framework.config import CONFIG_PATH, DATA_DIR, get_token, load_config, save_config
+from framework.plugin_manager import PluginManager
+from framework.log_setup import setup_logging as _setup_logging_core
 
 
 # ── CLI root ──────────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ def start(ctx: click.Context) -> None:
     log = logging.getLogger("vprod")
     if log_file:
         log.info("Logging to file: %s", log_file)
-    from core.bot import VantageBot
+    from framework.bot import VantageBot
 
     config = load_config()
 
@@ -106,7 +106,7 @@ def repos() -> None:
 @repos.command("list")
 def repos_list() -> None:
     """List all registered repositories."""
-    mgr = CogManager()
+    mgr = PluginManager()
     data = mgr.list_repos()
 
     if not data:
@@ -126,8 +126,8 @@ def repos_list() -> None:
         if info.get("url"):
             click.echo(f"       URL : {info['url']}")
         click.echo(f"      Path : {info['path']}")
-        cogs = info.get("installed_cogs", [])
-        click.echo(f"      Cogs : {', '.join(cogs) if cogs else '(none installed)'}\n")
+        plugins = info.get("installed_plugins", [])
+        click.echo(f"   Plugins : {', '.join(plugins) if plugins else '(none installed)'}\n")
 
 
 @repos.command("add")
@@ -135,7 +135,7 @@ def repos_list() -> None:
 @click.option("--name", default=None, help="Custom name for the repository (must be a valid Python identifier).")
 def repos_add(url_or_path: str, name: str | None) -> None:
     """Add a repository — GitHub URL or local directory path."""
-    mgr = CogManager()
+    mgr = PluginManager()
     path = Path(url_or_path)
 
     if path.exists() and path.is_dir():
@@ -164,7 +164,7 @@ def repos_add(url_or_path: str, name: str | None) -> None:
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 def repos_remove(name: str, yes: bool) -> None:
     """Remove a registered repository."""
-    mgr = CogManager()
+    mgr = PluginManager()
 
     if name not in mgr.list_repos():
         click.echo(click.style(f"Repo '{name}' not found.", fg="red"))
@@ -183,7 +183,7 @@ def repos_remove(name: str, yes: bool) -> None:
 @click.argument("name", required=False, default=None)
 def repos_update(name: str | None) -> None:
     """Pull latest changes for GitHub repos."""
-    mgr = CogManager()
+    mgr = PluginManager()
     all_repos = mgr.list_repos()
 
     targets = (
@@ -205,78 +205,78 @@ def repos_update(name: str | None) -> None:
             click.echo(click.style(f"  Failed: {exc}", fg="red"))
 
 
-# ── cogs ──────────────────────────────────────────────────────────────────────
+# ── plugins ───────────────────────────────────────────────────────────────────
 
 
 @cli.group()
-def cogs() -> None:
-    """Manage cogs (extensions)."""
+def plugins() -> None:
+    """Manage plugins (extensions)."""
 
 
-@cogs.command("list")
-def cogs_list() -> None:
-    """List all installed cogs and their autoload status."""
-    mgr = CogManager()
-    installed = mgr.get_installed_cogs()
+@plugins.command("list")
+def plugins_list() -> None:
+    """List all installed plugins and their autoload status."""
+    mgr = PluginManager()
+    installed = mgr.get_installed_plugins()
     autoload = set(mgr.get_autoload())
 
     if not installed:
-        click.echo("No cogs installed.\n")
-        click.echo("Install one with: " + click.style("python launcher.py cogs install <repo> <cog>", bold=True))
+        click.echo("No plugins installed.\n")
+        click.echo("Install one with: " + click.style("python launcher.py plugins install <repo> <plugin>", bold=True))
         return
 
-    click.echo(click.style(f"\nInstalled Cogs ({len(installed)})\n", bold=True))
-    for cog_path in sorted(installed):
-        flag = click.style(" [autoload]", fg="green") if cog_path in autoload else ""
-        click.echo(f"  {click.style(cog_path, bold=True)}{flag}")
+    click.echo(click.style(f"\nInstalled Plugins ({len(installed)})\n", bold=True))
+    for plugin_path in sorted(installed):
+        flag = click.style(" [autoload]", fg="green") if plugin_path in autoload else ""
+        click.echo(f"  {click.style(plugin_path, bold=True)}{flag}")
 
     click.echo()
-    click.echo("Toggle autoload: " + click.style("python launcher.py cogs autoload <cog_path>", bold=True))
+    click.echo("Toggle autoload: " + click.style("python launcher.py plugins autoload <plugin_path>", bold=True))
 
 
-@cogs.command("install")
+@plugins.command("install")
 @click.argument("repo")
-@click.argument("cog")
-def cogs_install(repo: str, cog: str) -> None:
-    """Install a cog from a registered repo.
+@click.argument("plugin")
+def plugins_install(repo: str, plugin: str) -> None:
+    """Install a plugin from a registered repo.
 
-    REPO is the registered repo name, COG is the cog file/package name.
+    REPO is the registered repo name, PLUGIN is the plugin file/package name.
     """
-    mgr = CogManager()
+    mgr = PluginManager()
     try:
-        cog_path = mgr.install_cog(repo, cog)
-        click.echo(click.style(f"'{cog}' installed as '{cog_path}'.", fg="green"))
+        plugin_path = mgr.install_plugin(repo, plugin)
+        click.echo(click.style(f"'{plugin}' installed as '{plugin_path}'.", fg="green"))
         click.echo(
             "\nEnable autoload: "
-            + click.style(f"python launcher.py cogs autoload {cog_path}", bold=True)
+            + click.style(f"python launcher.py plugins autoload {plugin_path}", bold=True)
         )
     except (ValueError, FileNotFoundError) as exc:
         click.echo(click.style(f"{exc}", fg="red"))
 
 
-@cogs.command("uninstall")
-@click.argument("cog_path")
-def cogs_uninstall(cog_path: str) -> None:
-    """Uninstall an installed cog (removes from registry, not from disk)."""
-    mgr = CogManager()
+@plugins.command("uninstall")
+@click.argument("plugin_path")
+def plugins_uninstall(plugin_path: str) -> None:
+    """Uninstall a plugin (removes from registry, not from disk)."""
+    mgr = PluginManager()
     try:
-        mgr.uninstall_cog(cog_path)
-        click.echo(click.style(f"'{cog_path}' uninstalled.", fg="green"))
+        mgr.uninstall_plugin(plugin_path)
+        click.echo(click.style(f"'{plugin_path}' uninstalled.", fg="green"))
     except ValueError as exc:
         click.echo(click.style(f"{exc}", fg="red"))
 
 
-@cogs.command("autoload")
-@click.argument("cog_path")
-def cogs_autoload(cog_path: str) -> None:
-    """Toggle whether a cog loads automatically on bot start."""
-    mgr = CogManager()
+@plugins.command("autoload")
+@click.argument("plugin_path")
+def plugins_autoload(plugin_path: str) -> None:
+    """Toggle whether a plugin loads automatically on bot start."""
+    mgr = PluginManager()
     try:
-        enabled = mgr.toggle_autoload(cog_path)
+        enabled = mgr.toggle_autoload(plugin_path)
         if enabled:
-            click.echo(click.style(f"'{cog_path}' will autoload on bot start.", fg="green"))
+            click.echo(click.style(f"'{plugin_path}' will autoload on bot start.", fg="green"))
         else:
-            click.echo(click.style(f"'{cog_path}' will NOT autoload on bot start.", fg="yellow"))
+            click.echo(click.style(f"'{plugin_path}' will NOT autoload on bot start.", fg="yellow"))
     except ValueError as exc:
         click.echo(click.style(f"{exc}", fg="red"))
 
@@ -344,7 +344,7 @@ def system_status() -> None:
         click.echo("  " + click.style("[WARN]", fg="yellow") + " systemctl not found — not running on systemd")
 
     # 6 — config
-    from core.config import CONFIG_PATH
+    from framework.config import CONFIG_PATH
     cfg_ok = CONFIG_PATH.exists()
     _status_line(f"Bot config ({CONFIG_PATH})", cfg_ok,
                  ok_detail="found",

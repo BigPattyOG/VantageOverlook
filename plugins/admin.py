@@ -1,4 +1,4 @@
-"""Built-in Admin cog — owner-only bot management commands.
+"""Built-in Admin plugin — owner-only bot management commands.
 
 Commands
 --------
@@ -6,8 +6,11 @@ Commands
 ``[p]load``           — Load an extension.
 ``[p]unload``         — Unload an extension.
 ``[p]reload``         — Reload an extension.
-``[p]cogs``           — List loaded extensions.
+``[p]plugins``        — List loaded extensions.
 ``[p]prefix``         — Get or change the command prefix.
+``[p]maintenance``    — Toggle maintenance mode on/off.
+``[p]invite``         — Show the bot's invite URL (Administrator permission).
+``[p]version``        — Show the current bot version and git info.
 ``[p]shutdown``       — Gracefully shut down the bot.
 ``[p]vmanage``        — Interactive bot management panel (with buttons).
 ``[p]servers``        — List all guilds the bot is in.
@@ -31,16 +34,9 @@ from typing import Optional
 import discord
 from discord.ext import commands
 
+from framework.embeds import VantageEmbed, TEAL, GREEN, RED, GOLD, BLURPLE
+
 log = logging.getLogger("vprod.admin")
-
-TEAL    = discord.Color.from_str("#2DC5C5")   # Vantage teal (primary)
-GREEN   = discord.Color.green()
-RED     = discord.Color.red()
-GOLD    = discord.Color.gold()
-BLURPLE = discord.Color.blurple()
-
-# Alias used throughout for consistency
-EMBED_COLOUR = TEAL
 
 
 # ── Management panel view ─────────────────────────────────────────────────────
@@ -332,7 +328,7 @@ async def _build_vmanage_embed(bot: commands.Bot) -> discord.Embed:
     return embed
 
 
-# ── Admin cog ─────────────────────────────────────────────────────────────────
+# ── Admin plugin ─────────────────────────────────────────────────────────────
 
 class Admin(commands.Cog, name="Owner"):
     """Owner-only bot management commands."""
@@ -340,29 +336,16 @@ class Admin(commands.Cog, name="Owner"):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    # ── helpers ───────────────────────────────────────────────────────────────
+    # ── embed helpers ─────────────────────────────────────────────────────────
 
     def _ok(self, description: str) -> discord.Embed:
-        return discord.Embed(
-            description=f"✅  {description}",
-            color=GREEN,
-            timestamp=datetime.now(timezone.utc),
-        )
+        return VantageEmbed.ok(description)
 
     def _err(self, description: str) -> discord.Embed:
-        return discord.Embed(
-            description=f"❌  {description}",
-            color=RED,
-            timestamp=datetime.now(timezone.utc),
-        )
+        return VantageEmbed.error("Error", description)
 
     def _info(self, title: str, description: str = "") -> discord.Embed:
-        return discord.Embed(
-            title=title,
-            description=description,
-            color=TEAL,
-            timestamp=datetime.now(timezone.utc),
-        )
+        return VantageEmbed.info(title, description)
 
     # ── basic commands ────────────────────────────────────────────────────────
 
@@ -407,8 +390,8 @@ class Admin(commands.Cog, name="Owner"):
 
         **Owner only.**
         """
-        if extension in ("cogs.admin",):
-            await ctx.send(embed=self._err("You cannot unload the built-in admin cog."))
+        if extension in ("plugins.admin",):
+            await ctx.send(embed=self._err("You cannot unload the built-in admin plugin."))
             return
         try:
             await self.bot.unload_extension(extension)
@@ -437,9 +420,9 @@ class Admin(commands.Cog, name="Owner"):
             log.exception("Failed to reload extension: %s", extension)
             await ctx.send(embed=self._err(f"Failed to reload **{extension}**:\n```\n{exc}\n```"))
 
-    @commands.command(name="cogs")
+    @commands.command(name="plugins")
     @commands.is_owner()
-    async def list_cogs(self, ctx: commands.Context) -> None:
+    async def list_plugins(self, ctx: commands.Context) -> None:
         """List all currently loaded extensions and their display names.
 
         **Owner only.**
@@ -449,7 +432,7 @@ class Admin(commands.Cog, name="Owner"):
             await ctx.send(embed=embed)
             return
 
-        # Build a reverse map: module path → cog display name (one pass over cogs).
+        # Build a reverse map: module path → plugin display name.
         module_to_name: dict[str, str] = {
             getattr(type(cog), "__module__", ""): cog.qualified_name
             for cog in self.bot.cogs.values()
@@ -485,7 +468,7 @@ class Admin(commands.Cog, name="Owner"):
         self.bot.config["prefix"] = new_prefix
         self.bot.command_prefix = commands.when_mentioned_or(new_prefix)
 
-        from core.config import save_config
+        from framework.config import save_config
         save_config(self.bot.config)
 
         log.info("Prefix changed to '%s' by %s", new_prefix, ctx.author)
@@ -728,7 +711,7 @@ class Admin(commands.Cog, name="Owner"):
 
         # Persist to config so it survives restarts
         self.bot.config["activity"] = text
-        from core.config import save_config
+        from framework.config import save_config
         save_config(self.bot.config)
 
         log.info("Activity changed to %s '%s' by %s", activity_type, text, ctx.author)
@@ -744,18 +727,136 @@ class Admin(commands.Cog, name="Owner"):
         prefix = cfg.get("prefix", "!")
         description = cfg.get("description", "")
 
-        embed = discord.Embed(
-            title=f"ℹ️  About {bot_name}",
-            description=description,
-            color=TEAL,
-            timestamp=datetime.now(timezone.utc),
+        embed = VantageEmbed.info(
+            f"ℹ️  About {bot_name}",
+            description,
+            bot=self.bot,
+            thumbnail=True,
         )
-        if self.bot.user:
-            embed.set_thumbnail(url=self.bot.user.display_avatar.url)
         embed.add_field(name="Prefix", value=f"`{prefix}`", inline=True)
         embed.add_field(name="Guilds", value=f"{len(self.bot.guilds):,}", inline=True)
         embed.add_field(name="discord.py", value=discord.__version__, inline=True)
-        embed.set_footer(text=f"Powered by vprod  •  Python {platform.python_version()}")
+        await ctx.send(embed=embed)
+
+    # ── maintenance ───────────────────────────────────────────────────────────
+
+    @commands.command()
+    @commands.is_owner()
+    async def maintenance(self, ctx: commands.Context, state: str = "") -> None:
+        """Toggle maintenance mode on or off.
+
+        **Owner only.**  While maintenance is active, all non-owner commands
+        receive a maintenance notice instead of running normally.  Owners are
+        unaffected and can still use every command.
+
+        Examples::
+
+            {prefix}maintenance on
+            {prefix}maintenance off
+            {prefix}maintenance          (shows current state)
+        """
+        current: bool = self.bot.config.get("maintenance", False)
+
+        if state.lower() in ("on", "enable", "true", "1", "yes"):
+            new_state = True
+        elif state.lower() in ("off", "disable", "false", "0", "no"):
+            new_state = False
+        elif state == "":
+            label = "**ON** 🔧" if current else "**OFF** ✅"
+            await ctx.send(embed=self._info("Maintenance Mode", f"Currently: {label}"))
+            return
+        else:
+            await ctx.send(embed=self._err("Use `on` or `off`."))
+            return
+
+        self.bot.config["maintenance"] = new_state
+        from framework.config import save_config
+        save_config(self.bot.config)
+        log.info("Maintenance mode set to %s by %s", new_state, ctx.author)
+
+        if new_state:
+            await ctx.send(embed=VantageEmbed.warn(
+                "🔧  Maintenance Mode Enabled",
+                "The bot is now in maintenance mode.\n"
+                "Non-owner commands will return a maintenance notice.\n"
+                "Run `maintenance off` when done.",
+            ))
+        else:
+            await ctx.send(embed=self._ok("Maintenance mode **disabled**. The bot is back online."))
+
+    # ── invite ────────────────────────────────────────────────────────────────
+
+    @commands.command()
+    @commands.is_owner()
+    async def invite(self, ctx: commands.Context) -> None:
+        """Generate an invite URL for this bot with Administrator permission.
+
+        **Owner only.**  Use this to add the bot to a new server or to
+        re-invite it with full permissions if it is missing access.
+        """
+        if self.bot.application_id is None:
+            await ctx.send(embed=self._err(
+                "Application ID not available yet — try again in a moment."
+            ))
+            return
+
+        perms = discord.Permissions(administrator=True)
+        url = discord.utils.oauth_url(
+            self.bot.application_id,
+            permissions=perms,
+            scopes=("bot", "applications.commands"),
+        )
+        embed = VantageEmbed.info(
+            "🔗  Bot Invite Link",
+            f"Click the link below to add the bot to a server with **Administrator** permission.\n\n"
+            f"[Invite {self.bot.user.display_name if self.bot.user else 'Bot'}]({url})",
+            bot=self.bot,
+        )
+        embed.set_footer(text="Only share this link with people you trust.")
+        await ctx.send(embed=embed, ephemeral=False)
+
+    # ── version ───────────────────────────────────────────────────────────────
+
+    @commands.command()
+    async def version(self, ctx: commands.Context) -> None:
+        """Show the current bot version and git commit info."""
+        from framework.embeds import get_version
+        from pathlib import Path
+        import subprocess as _sp
+
+        ver = get_version()
+        install_dir = Path(__file__).resolve().parents[1]
+
+        git_hash = "unknown"
+        git_branch = "unknown"
+        git_date = "unknown"
+        try:
+            git_hash = _sp.run(
+                ["git", "-C", str(install_dir), "rev-parse", "--short", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip() or "unknown"
+            git_branch = _sp.run(
+                ["git", "-C", str(install_dir), "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip() or "unknown"
+            git_date = _sp.run(
+                ["git", "-C", str(install_dir), "log", "-1", "--format=%ci"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout.strip() or "unknown"
+        except Exception:
+            pass
+
+        embed = VantageEmbed.info(
+            f"📦  {self.bot.config.get('name', 'Vantage')} v{ver}",
+            bot=self.bot,
+            thumbnail=True,
+        )
+        embed.add_field(name="Version", value=f"`{ver}`", inline=True)
+        embed.add_field(name="Branch", value=f"`{git_branch}`", inline=True)
+        embed.add_field(name="Commit", value=f"`{git_hash}`", inline=True)
+        embed.add_field(name="Commit Date", value=git_date or "—", inline=True)
+        embed.add_field(name="discord.py", value=discord.__version__, inline=True)
+        embed.add_field(name="Python", value=platform.python_version(), inline=True)
         await ctx.send(embed=embed)
 
 
