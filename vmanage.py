@@ -489,32 +489,101 @@ def do_plugins(bot: BotInstance, debug: bool = False) -> None:
 # ── MOTD status block ─────────────────────────────────────────────────────────
 
 def do_motd(bot: BotInstance) -> None:
-    """Print a compact status block for display at SSH login (/etc/update-motd.d/)."""
-    if not shutil.which("systemctl"):
-        return
+    """Print a rich status panel for display at SSH login (/etc/update-motd.d/)."""
+    W = 68
+    sep   = teal("━" * W)
+    hsep  = dim("─" * W)
 
-    running = bot.is_running()
-    state   = bot.active_state()
-    uptime  = bot.uptime() if running else None
-
-    if running:
-        state_str = f"{teal('●')} {teal(bold('running'))}"
-        if uptime:
-            state_str += f"  {dim('up ' + uptime)}"
-    else:
-        state_str = f"{red('●')} {red(bold(state or 'stopped'))}"
-
-    W = 66
-    sep = teal("━" * W)
-
+    # ── Banner ────────────────────────────────────────────────────────────────
     print()
     print(sep)
-    print(f"  {bold(bot.name):<22} {state_str}")
+    for line in _BANNER_LINES:
+        print(teal(bold(line)))
+
+    # bot name + vmanage version on the same line as the bottom of the banner
     print(
-        f"  {dim('Dashboard:')} {bold('vmanage')}   "
-        f"{dim('Update:')} {bold('vmanage --update')}   "
-        f"{dim('Token:')} {bold('vmanage --update-token')}"
+        f"  {dim('Bot:')} {bold(bot.name)}"
+        f"   {dim('vmanage')} {dim(VERSION)}"
     )
+    print(sep)
+
+    # ── Service status ────────────────────────────────────────────────────────
+    if shutil.which("systemctl"):
+        running = bot.is_running()
+        state   = bot.active_state()
+        uptime  = bot.uptime() if running else None
+
+        if running:
+            status_str = f"{teal('●')} {teal(bold('running'))}"
+            if uptime:
+                status_str += f"  {dim('up ' + uptime)}"
+        elif state in ("activating", "deactivating", "reloading"):
+            status_str = f"{yellow('●')} {yellow(bold(state))}"
+        else:
+            status_str = f"{red('●')} {red(bold(state or 'stopped'))}"
+    else:
+        status_str = dim("systemd unavailable")
+
+    print()
+    print(f"  {bold('Service')}")
+    print(f"  {hsep}")
+    print(f"  {'Status':<16} {status_str}")
+    print(f"  {'Unit':<16} {dim(bot.service_name + '.service')}")
+    print()
+
+    # ── Configuration ─────────────────────────────────────────────────────────
+    print(f"  {bold('Configuration')}")
+    print(f"  {hsep}")
+
+    description = bot.config.get("description", "")
+    if description:
+        print(f"  {'Description':<16} {dim(description)}")
+
+    owners = bot.config.get("owner_ids", [])
+    maintenance = bot.config.get("maintenance", False)
+
+    print(f"  {'Prefix':<16} {bold(bot.prefix)}")
+    print(f"  {'Owners':<16} {dim(str(len(owners)) + ' configured')}")
+
+    if maintenance:
+        print(f"  {'Maintenance':<16} {yellow(bold('ON'))}")
+
+    py_ver = bot.python_version()
+    if py_ver:
+        print(f"  {'Python':<16} {teal(py_ver)}  {dim('(venv)')}")
+    else:
+        print(f"  {'Python':<16} {red('venv not found')}")
+
+    if bot.has_token():
+        print(f"  {'Discord token':<16} {teal('set ✓')}")
+    else:
+        print(f"  {'Discord token':<16} {red('NOT SET')}  {dim('→ vmanage --update-token')}")
+
+    print()
+
+    # ── Paths ─────────────────────────────────────────────────────────────────
+    print(f"  {bold('Paths')}")
+    print(f"  {hsep}")
+    print(f"  {'Code':<16} {dim(str(bot.install_dir))}")
+    print(f"  {'Data / token':<16} {dim(str(DATA_DIR))}")
+    print()
+
+    # ── Quick-reference commands ──────────────────────────────────────────────
+    print(f"  {bold('Commands')}")
+    print(f"  {hsep}")
+    cmd_pairs = [
+        ("Dashboard",    "vmanage"),
+        ("Start",        "vmanage --start"),
+        ("Stop",         "vmanage --stop"),
+        ("Restart",      "vmanage --restart"),
+        ("Logs",         "vmanage --logs"),
+        ("Update",       "vmanage --update"),
+        ("Rotate token", "vmanage --update-token"),
+    ]
+    lw = max(len(lb) for lb, _ in cmd_pairs)
+    for label, cmd in cmd_pairs:
+        print(f"  {dim(label + ':'):<{lw + 8}} {bold(cmd)}")
+
     print(sep)
     print()
 
