@@ -143,18 +143,23 @@ Or build one manually:
 
 ## 7. Managing the Service
 
-```bash
-# Quick control via vmanage
-vmanage               # status dashboard
-vmanage --restart     # restart the bot
-vmanage --logs        # stream live logs
-vmanage --update      # git pull + pip install + restart (never touches .env)
+`vmanage` is installed at `/usr/local/bin/vmanage` during setup — it's on your PATH and works from any directory without activating the venv.
 
-# Or directly with systemctl
-sudo systemctl status  vprod
-sudo systemctl restart vprod
-sudo journalctl -u vprod -f
+```bash
+vmanage                    # full status dashboard
+vmanage --start            # start the bot
+vmanage --stop             # stop the bot
+vmanage --restart          # restart the bot
+vmanage --status           # full systemctl output
+vmanage --logs             # stream live logs (Ctrl+C to stop)
+vmanage --logs --lines 50  # show last 50 lines (non-streaming)
+vmanage --update           # git pull + pip upgrade + restart
+vmanage --update-token     # rotate the Discord token + restart
+vmanage --plugins          # list loaded plugins
+vmanage --repos            # list community plugin repos
 ```
+
+`vmanage --update` never touches `/var/lib/vprod/.env` — your token is always safe.
 
 ---
 

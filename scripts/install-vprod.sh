@@ -45,7 +45,7 @@ fi
 
 # ── pretty output ─────────────────────────────────────────────────────────────
 STEP=0
-TOTAL_STEPS=12
+TOTAL_STEPS=15
 
 _line() { printf '%*s\n' "${COLUMNS:-72}" '' | tr ' ' '═'; }
 _subline() { printf '%*s\n' "${COLUMNS:-72}" '' | tr ' ' '─'; }
@@ -339,7 +339,57 @@ install_service() {
   ok "Systemd service '${SERVICE_NAME}' installed and enabled"
 }
 
+install_vmanage_bin() {
+  # Symlink vmanage.py into /usr/local/bin so admins can run `vmanage` from
+  # anywhere without activating the venv.  Uses only stdlib, so system python3
+  # is enough.
+  local target="/usr/local/bin/vmanage"
+  [[ -e "${target}" || -L "${target}" ]] && rm -f "${target}"
+  ln -s "${APP_DIR}/vmanage.py" "${target}"
+  chmod 755 "${target}"
+  ok "vmanage installed at ${target}  (→ ${APP_DIR}/vmanage.py)"
+}
+
+install_motd() {
+  # Write an update-motd.d script that shows a compact bot-status line at SSH
+  # login.  Scripts in /etc/update-motd.d/ are run by PAM as root on each
+  # interactive login; their stdout is prepended to the MOTD.
+  local motd_dir="/etc/update-motd.d"
+  local motd_script="${motd_dir}/99-${SERVICE_NAME}"
+
+  mkdir -p "${motd_dir}"
+
+  cat > "${motd_script}" << 'MOTD_EOF'
+#!/bin/bash
+# vprod — show bot status on SSH login
+# Installed by install-vprod.sh — safe to delete to disable.
+# Errors are logged to syslog (logger -t vprod-motd) so they never break login.
+if [[ -x /usr/local/bin/vmanage ]]; then
+  /usr/local/bin/vmanage --motd 2> >(logger -t vprod-motd) || true
+fi
+MOTD_EOF
+
+  chmod 755 "${motd_script}"
+  ok "SSH login MOTD script installed at ${motd_script}"
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────
+# Step inventory (keep in sync with TOTAL_STEPS above):
+#   1  Check operating system
+#   2  Install system packages
+#   3  Ensure admin group
+#   4  Ensure bot user
+#   5  Add Linux admin to dev group
+#   6  Clone / update repository
+#   7  Set code directory permissions
+#   8  Prepare data directory
+#   9  Set bot-user umask
+#  10  Create Python virtual environment
+#  11  Write Discord token
+#  12  Write bot config
+#  13  Install systemd service
+#  14  Install vmanage on PATH
+#  15  Install SSH login MOTD status script
 main() {
   banner
 
@@ -382,6 +432,12 @@ main() {
   step "Install systemd service"
   install_service
 
+  step "Install vmanage on PATH (/usr/local/bin/vmanage)"
+  install_vmanage_bin
+
+  step "Install SSH login MOTD status script"
+  install_motd
+
   echo
   echo -e "${_TEAL}${_B}"
   _line
@@ -400,11 +456,14 @@ main() {
     echo
   fi
 
-  echo -e "  ${_DIM}View logs   :${_R} sudo journalctl -u ${SERVICE_NAME} -f"
-  echo -e "  ${_DIM}Check status:${_R} sudo systemctl status ${SERVICE_NAME}"
+  echo -e "  ${_DIM}View logs   :${_R} ${_B}vmanage --logs${_R}"
+  echo -e "  ${_DIM}Check status:${_R} ${_B}vmanage${_R}"
+  echo -e "  ${_DIM}Update code :${_R} ${_B}vmanage --update${_R}"
+  echo -e "  ${_DIM}Rotate token:${_R} ${_B}vmanage --update-token${_R}"
   echo -e "  ${_DIM}Token file  :${_R} ${DATA_DIR}/.env  ${_TEAL}(600, ${BOT_USER} only)${_R}"
   echo -e "  ${_DIM}Config      :${_R} ${DATA_DIR}/config.json"
-  echo -e "  ${_DIM}External plugins:${_R} ${DATA_DIR}/ext_plugins/"
+  echo -e "  ${_DIM}Ext plugins :${_R} ${DATA_DIR}/ext_plugins/"
+  echo -e "  ${_DIM}MOTD script :${_R} /etc/update-motd.d/99-${SERVICE_NAME}"
   echo
 
   if [[ -n "${ADMIN_USER}" && "${ADMIN_USER}" != "root" ]]; then

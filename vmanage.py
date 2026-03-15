@@ -17,6 +17,7 @@ Usage
     vmanage --logs --lines 50        Show last 50 log lines (non-streaming)
     vmanage --update                 git pull + pip upgrade + restart
     vmanage --update-token           Update the Discord token in .env + restart
+    vmanage --motd                   Print compact status block (used by MOTD script)
     vmanage --repos                  List plugin repositories
     vmanage --plugins                List installed plugins
     vmanage --debug                  Show verbose debug output
@@ -43,6 +44,13 @@ INSTALL_DIR = Path("/opt/vprod")
 DATA_DIR = Path("/var/lib/vprod")
 BOT_USER = "vprodbot"
 VERSION = "2.0.0"
+
+# Discord bot token format: three base64url segments separated by dots.
+# This regex is intentionally duplicated in scripts/install-vprod.sh
+# (validate_token_format) — keep both in sync if the format ever changes.
+_TOKEN_RE = re.compile(
+    r"^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$"
+)
 
 # ── colour helpers ─────────────────────────────────────────────────────────────
 
@@ -335,7 +343,7 @@ def do_update(bot: BotInstance, debug: bool = False, yes: bool = False) -> None:
         ["sudo", "-u", BOT_USER, "git", "-C", str(bot.install_dir), "pull", "--ff-only"]
     )
     if r.returncode != 0:
-        warn("git pull did not fast-forward -- repository may be up-to-date or have local changes.")
+        warn("git pull did not fast-forward — repository may be up-to-date or have local changes.")
     else:
         ok("Code updated.")
     print()
@@ -386,11 +394,6 @@ def do_update_token(bot: BotInstance, debug: bool = False, yes: bool = False) ->
 
     info(f"Token file: {bold(str(env_file))}")
     print()
-
-    # Token format: three base64url segments separated by dots (same regex as install-vprod.sh)
-    _TOKEN_RE = re.compile(
-        r"^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$"
-    )
 
     token = ""
     while True:
@@ -481,6 +484,39 @@ def do_plugins(bot: BotInstance, debug: bool = False) -> None:
     info(f"Installed plugins — {bold(bot.name)}:")
     print()
     _run_bot_cmd(bot, str(bot.venv_python), "launcher.py", "plugins", "list")
+
+
+# ── MOTD status block ─────────────────────────────────────────────────────────
+
+def do_motd(bot: BotInstance) -> None:
+    """Print a compact status block for display at SSH login (/etc/update-motd.d/)."""
+    if not shutil.which("systemctl"):
+        return
+
+    running = bot.is_running()
+    state   = bot.active_state()
+    uptime  = bot.uptime() if running else None
+
+    if running:
+        state_str = f"{teal('●')} {teal(bold('running'))}"
+        if uptime:
+            state_str += f"  {dim('up ' + uptime)}"
+    else:
+        state_str = f"{red('●')} {red(bold(state or 'stopped'))}"
+
+    W = 66
+    sep = teal("━" * W)
+
+    print()
+    print(sep)
+    print(f"  {bold(bot.name):<22} {state_str}")
+    print(
+        f"  {dim('Dashboard:')} {bold('vmanage')}   "
+        f"{dim('Update:')} {bold('vmanage --update')}   "
+        f"{dim('Token:')} {bold('vmanage --update-token')}"
+    )
+    print(sep)
+    print()
 
 
 # ── status dashboard ───────────────────────────────────────────────────────────
@@ -601,6 +637,7 @@ Examples:
   vmanage --update              Pull latest code and restart
   vmanage --update --yes        Same, skip confirmation
   vmanage --update-token        Change the Discord token and restart
+  vmanage --motd                Print the SSH login status block (preview)
   vmanage --plugins             List installed plugins
   vmanage --repos               List plugin repositories
   vmanage --debug               Show verbose debug information
@@ -622,6 +659,8 @@ Examples:
                     help="git pull + pip upgrade + restart")
     mx.add_argument("--update-token", action="store_true",
                     help="Update the Discord token in .env and restart")
+    mx.add_argument("--motd",    action="store_true",
+                    help="Print compact SSH-login status block (used by /etc/update-motd.d/)")
     mx.add_argument("--repos",   action="store_true", help="List plugin repositories")
     mx.add_argument("--plugins",    action="store_true", help="List installed plugins")
 
@@ -648,6 +687,16 @@ def main() -> None:
         print(f"  {dim('INSTALL_DIR:')} {INSTALL_DIR}")
         print(f"  {dim('DATA_DIR:   ')} {DATA_DIR}")
         print()
+
+    # --motd is handled before get_bot() so that SSH login never fails if the
+    # install directory is missing (e.g. during initial setup).
+    if args.motd:
+        try:
+            bot = get_bot()
+            do_motd(bot)
+        except SystemExit:
+            pass  # not installed — show nothing at login
+        return
 
     bot = get_bot()
 
