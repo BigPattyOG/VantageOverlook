@@ -282,7 +282,7 @@ create_venv() {
 read_token() {
     local _tok=''
     read -r -s -p "Enter DISCORD_TOKEN: " _tok </dev/tty || true
-    echo
+    echo >&2
     printf '%s' "$_tok"
 }
 
