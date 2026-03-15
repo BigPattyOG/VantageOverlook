@@ -145,34 +145,53 @@ class VantageBot(commands.Bot):
             return  # Silently ignore unknown commands
 
         if isinstance(error, commands.DisabledCommand):
-            await self._send_error(ctx, "Command Disabled", "This command is currently disabled.")
+            await self._send_error(
+                ctx,
+                "Command Disabled",
+                "This command has been disabled and cannot be used right now.",
+            )
             return
 
         if isinstance(error, commands.NoPrivateMessage):
             await self._send_error(
-                ctx, "Server Only", "This command can only be used inside a server."
+                ctx,
+                "Server Only",
+                "This command can only be used inside a server, not in DMs.",
             )
             return
 
         if isinstance(error, commands.MissingRequiredArgument):
+            param = error.param.name
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
             await self._send_error(
                 ctx,
                 "Missing Argument",
-                f"**`{error.param.name}`** is required.\n\n"
-                f"Usage: `{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`",
+                f"You forgot to provide **`{param}`**, which is required.\n\n"
+                f"**Correct usage:**\n{usage}\n\n"
+                f"Run `{ctx.clean_prefix}help {ctx.command.qualified_name}` for a full description.",
             )
             return
 
         if isinstance(error, commands.TooManyArguments):
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
             await self._send_error(
                 ctx,
                 "Too Many Arguments",
-                f"Usage: `{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`",
+                f"You provided more arguments than this command expects.\n\n"
+                f"**Correct usage:**\n{usage}\n\n"
+                f"Run `{ctx.clean_prefix}help {ctx.command.qualified_name}` for details.",
             )
             return
 
         if isinstance(error, (commands.BadArgument, commands.BadUnionArgument)):
-            await self._send_error(ctx, "Bad Argument", str(error))
+            usage = f"`{ctx.clean_prefix}{ctx.command.qualified_name} {ctx.command.signature}`".strip()
+            await self._send_error(
+                ctx,
+                "Invalid Argument",
+                f"{error}\n\n"
+                f"**Correct usage:**\n{usage}\n\n"
+                f"Run `{ctx.clean_prefix}help {ctx.command.qualified_name}` for details.",
+            )
             return
 
         if isinstance(error, commands.MissingPermissions):
@@ -180,8 +199,10 @@ class VantageBot(commands.Bot):
                 p.replace("_", " ").title() for p in error.missing_permissions
             )
             await self._send_error(
-                ctx, "Missing Permissions",
-                f"You need the **{perms}** permission(s) to run this command."
+                ctx,
+                "Permission Denied",
+                f"You need the **{perms}** permission(s) to run this command.\n"
+                "Ask a server administrator if you think you should have access.",
             )
             return
 
@@ -190,14 +211,18 @@ class VantageBot(commands.Bot):
                 p.replace("_", " ").title() for p in error.missing_permissions
             )
             await self._send_error(
-                ctx, "Bot Missing Permissions",
-                f"I need the **{perms}** permission(s) to do that."
+                ctx,
+                "Bot Missing Permissions",
+                f"I need the **{perms}** permission(s) in this channel to do that.\n"
+                "Ask a server administrator to grant me the missing permissions.",
             )
             return
 
         if isinstance(error, commands.NotOwner):
             await self._send_error(
-                ctx, "Owner Only", "This command is restricted to bot owners."
+                ctx,
+                "Owner Only",
+                "This command can only be used by the bot owner(s).",
             )
             return
 
@@ -205,18 +230,23 @@ class VantageBot(commands.Bot):
             per_name = error.per.name.replace("_", " ")
             await self._send_error(
                 ctx,
-                "Too Many Active Uses",
-                f"This command can only be run **{error.number}** time(s) at once per "
-                f"{per_name}. Please wait for it to finish.",
+                "Command Already Running",
+                f"This command can only run **{error.number}** time(s) at once per {per_name}.\n"
+                "Please wait for the current use to finish, then try again.",
             )
             return
 
         if isinstance(error, commands.CommandOnCooldown):
+            retry = error.retry_after
+            if retry < 60:
+                wait = f"{retry:.1f} seconds"
+            else:
+                m, s = divmod(int(retry), 60)
+                wait = f"{m}m {s}s"
             await self._send_error(
                 ctx,
-                "On Cooldown",
-                f"You're using this command too fast. "
-                f"Try again in **{error.retry_after:.1f}s**.",
+                "Slow Down",
+                f"This command is on cooldown. Try again in **{wait}**.",
             )
             return
 
@@ -231,7 +261,9 @@ class VantageBot(commands.Bot):
                     pass
                 return
             await self._send_error(
-                ctx, "Access Denied", "You don't have permission to run this command."
+                ctx,
+                "Access Denied",
+                "You do not have permission to run this command.",
             )
             return
 
@@ -243,9 +275,9 @@ class VantageBot(commands.Bot):
         )
         await self._send_error(
             ctx,
-            "Unexpected Error",
-            "An unexpected error occurred. Please try again later.\n"
-            "If this keeps happening, let the bot owner know.",
+            "Something Went Wrong",
+            "An unexpected error occurred while running that command.\n"
+            "Please try again in a moment. If the problem continues, let the bot owner know.",
         )
 
     # ── helpers ───────────────────────────────────────────────────────────────
