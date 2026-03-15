@@ -93,7 +93,7 @@ run_quiet() {
 confirm() {
     local prompt="${1:-Continue?}"
     local answer
-    read -r -p "$prompt [y/N]: " answer || true
+    read -r -p "$prompt [y/N]: " answer </dev/tty || true
     case "${answer:-}" in
         y|Y|yes|YES) return 0 ;;
         *) return 1 ;;
@@ -280,9 +280,9 @@ create_venv() {
 }
 
 read_token() {
-    local _tok
-    read -r -s -p "Enter DISCORD_TOKEN: " _tok
-    echo
+    local _tok=''
+    read -r -s -p "Enter DISCORD_TOKEN: " _tok </dev/tty || true
+    echo >&2
     printf '%s' "$_tok"
 }
 
