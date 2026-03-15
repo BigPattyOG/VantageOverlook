@@ -42,18 +42,7 @@ if str(_ROOT) not in sys.path:
 
 from core.config import CONFIG_PATH, DATA_DIR, get_token, load_config, save_config
 from core.cog_manager import CogManager
-
-
-# ── Logging setup ─────────────────────────────────────────────────────────────
-
-
-def _setup_logging(debug: bool = False) -> None:
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+from core.log_setup import setup_logging as _setup_logging_core
 
 
 # ── CLI root ──────────────────────────────────────────────────────────────────
@@ -75,7 +64,11 @@ def cli(ctx: click.Context, debug: bool) -> None:
 @click.pass_context
 def start(ctx: click.Context) -> None:
     """Start the vprod bot."""
-    _setup_logging(ctx.obj.get("debug", False))
+    debug = ctx.obj.get("debug", False)
+    log_file = _setup_logging_core(debug=debug, log_dir=DATA_DIR / "logs")
+    log = logging.getLogger("vprod")
+    if log_file:
+        log.info("Logging to file: %s", log_file)
     from core.bot import VantageBot
 
     config = load_config()

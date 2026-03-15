@@ -19,16 +19,13 @@ import discord
 from discord.ext import commands
 
 from .cog_manager import CogManager
+from .embeds import VantageEmbed, GOLD
 from .health import HealthServer
 from .help_command import VantageHelp
 
 log = logging.getLogger("vprod")
 
 BUILTIN_EXTENSIONS = ["cogs.admin"]
-
-# Colours used for embeds
-TEAL = discord.Color.from_str("#2DC5C5")   # primary brand colour
-RED = discord.Color.red()                   # errors
 
 
 class VantageBot(commands.Bot):
@@ -51,6 +48,9 @@ class VantageBot(commands.Bot):
             description=config.get("description", "vprod Discord Bot"),
             help_command=VantageHelp(),
         )
+
+        # Register the global maintenance check.
+        self.add_check(self._maintenance_check)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 

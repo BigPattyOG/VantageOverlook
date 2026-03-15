@@ -20,11 +20,26 @@ from typing import Any, Dict
 
 
 def _load_dotenv() -> None:
-    """Load a .env file from the project root if python-dotenv is available."""
+    """Load .env files using python-dotenv if available.
+
+    Resolution order (first match wins — ``override=False`` means an
+    already-set env var is never overwritten):
+
+    1. ``<DATA_DIR>/.env``   — production location written by install-vprod.sh;
+                               lives outside the git directory so ``git pull``
+                               can never wipe the token.
+    2. Project-root ``.env`` — development / legacy location.
+    """
     try:
         from dotenv import load_dotenv
-        env_file = Path(__file__).resolve().parents[1] / ".env"
-        load_dotenv(dotenv_path=env_file, override=False)
+        # 1 — production token location (outside git directory)
+        data_env = DATA_DIR / ".env"
+        if data_env.exists():
+            load_dotenv(dotenv_path=data_env, override=False)
+        # 2 — project-root .env (dev / legacy)
+        root_env = Path(__file__).resolve().parents[1] / ".env"
+        if root_env.exists():
+            load_dotenv(dotenv_path=root_env, override=False)
     except ImportError:
         pass
 
@@ -78,6 +93,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # to expose to external interfaces (e.g. for a remote monitoring service).
     "health_port": 8080,
     "health_host": "127.0.0.1",
+    # Maintenance mode — when True, non-owner commands are blocked.
+    "maintenance": False,
+    "maintenance_message": "",
 }
 
 
