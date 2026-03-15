@@ -1,6 +1,30 @@
 # VantageOverlook — vprod
 
-Private Discord bot framework. Modular, self-hosted, runs on Ubuntu via systemd.
+Self-hosted Discord bot framework. Modular, runs on Ubuntu via systemd.
+
+---
+
+## Quick Start
+
+### Production server (recommended)
+
+SSH into your server and run one command. The script handles everything — packages, system user, venv, permissions, config, systemd service — and prompts you for the Discord token at the end.
+
+```bash
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh)
+```
+
+Your token is stored in `/var/lib/vprod/.env` (chmod 600, owned by the bot user only). It never touches GitHub.
+
+### Local development
+
+```bash
+git clone https://github.com/BigPattyOG/VantageOverlook.git vprod && cd vprod
+bash scripts/install-vdev.sh
+venv/bin/python launcher.py start
+```
+
+Token goes to `data/.env` (gitignored). No sudo, no systemd.
 
 ---
 
@@ -12,7 +36,6 @@ plugins/            Built-in admin plugin (always loaded)
 scripts/            Install scripts
 docs/               Documentation
 data/               Runtime data — gitignored (config, token, plugins, logs)
-.github/workflows/  Automated deploy pipelines
 launcher.py         Bot CLI  (start, repos, plugins, system)
 vmanage.py          System management CLI
 vprod.service       Systemd service unit
@@ -21,33 +44,9 @@ VERSION             Current version number
 
 ---
 
-## Quick Start
-
-### Automated (recommended) — GitHub Actions
-
-1. Add secrets in GitHub: `DISCORD_TOKEN`, `SSH_HOST`, `SSH_USER`, `SSH_KEY`
-2. Push to `main` — the bot deploys automatically
-
-See [docs/TOKEN_MANAGEMENT.md](docs/TOKEN_MANAGEMENT.md) for the full explanation.
-
-### Manual — production server
-
-```bash
-sudo bash scripts/install-vprod.sh
-```
-
-### Local development
-
-```bash
-bash scripts/install-vdev.sh
-venv/bin/python launcher.py start
-```
-
----
-
 ## Docs
 
-- [Token management](docs/TOKEN_MANAGEMENT.md) — how the token gets from GitHub to the server
-- [Setup guide](docs/SETUP.md) — full production + dev walkthrough
+- [Setup guide](docs/SETUP.md) — full walkthrough (production + dev)
+- [Token management](docs/TOKEN_MANAGEMENT.md) — where the token lives and how to rotate it
 - [Plugin authoring](docs/PLUGINS.md) — write and install external plugins
 - [Owner guide](docs/OWNER_GUIDE.md) — all Discord commands

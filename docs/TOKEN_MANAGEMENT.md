@@ -1,182 +1,195 @@
 # Token Management
 
-This document explains exactly where the Discord bot token lives, how it gets onto the server, and how to handle resets.
+Where the Discord bot token lives, how it gets onto the server, and how to rotate it.
 
 ---
 
-## The short answer
+## The short version
 
-The token **cannot be stored in the git repository** — Discord's scanner monitors GitHub continuously and invalidates any token it finds in a public or private repo within seconds.
+The token **cannot be stored in the git repository** — Discord's scanner monitors GitHub and invalidates any token found in a repo (public or private) within seconds.
 
-The token lives in **two places**:
-
-| Location | What lives there |
-|----------|-----------------|
-| **GitHub Secrets** | The authoritative copy. Encrypted. Only readable by GitHub Actions runners — never exposed to humans or external systems. |
-| **`/var/lib/vprod/.env`** on the server | The working copy. Written by the deploy workflow. File permissions `600`, owned by `vprodbot` only. Outside the git checkout so `git pull` can never touch it. |
-
----
-
-## How the token gets from GitHub to the server
+The token lives in **one place on your server**:
 
 ```
-You  ──→  GitHub Secrets  ──→  GitHub Actions runner (encrypted, in-memory)
+/var/lib/vprod/.env
+```
+
+- Permissions: `600` (owner read/write only)
+- Owner: `vprodbot` (the system user that runs the bot)
+- Location: **outside** the git checkout (`/opt/vprod/`) so `git pull` can never touch it
+
+You never need to put the token in GitHub at all.
+
+---
+
+## How it works (curl install — no GitHub access to server)
+
+The simplest and most private approach. GitHub only serves the install script — it never connects to your server.
+
+```
+discord.com/developers  ──→  You copy the token to your clipboard
                                         │
-                                        │  SSH (encrypted channel)
-                                        ▼
+                        SSH into your server
+                                        │
+              sudo bash <(curl -fsSL …/install-vprod.sh)
+                                        │
+                     Script prompts: "Enter DISCORD_TOKEN:"
+                                        │
                               /var/lib/vprod/.env  (chmod 600, vprodbot only)
                                         │
-                                        │  EnvironmentFile= in vprod.service
-                                        ▼
-                              Bot process (DISCORD_TOKEN env var)
+                         systemd EnvironmentFile=
+                                        │
+                         Bot process (DISCORD_TOKEN env var)
 ```
 
-Step by step:
-
-1. You add `DISCORD_TOKEN` to GitHub Secrets (Settings → Secrets and variables → Actions).
-2. A push to `main` triggers the `deploy-vprod.yml` workflow (or you run it manually).
-3. GitHub's runner decrypts the secret **in memory** — it is never written to the runner's disk.
-4. The runner SSHes into your server and runs `install-vprod.sh` with `DISCORD_TOKEN` exported for that single command.
-5. `install-vprod.sh` writes the token to `/var/lib/vprod/.env` and sets permissions to `600` (`vprodbot` read-only).
-6. The deploy script immediately drops the variable from the environment.
-7. `systemd` starts `vprod.service` which reads `EnvironmentFile=/var/lib/vprod/.env` — the token is injected into the bot process as `DISCORD_TOKEN`.
-
-The token is **never** in:
-- The git repository (code or history)
-- GitHub Actions logs (GitHub redacts secrets from log output)
-- Any file readable by users other than `vprodbot`
+The token:
+- Goes from your clipboard directly into the server's `.env` file
+- Is never written to the installer's terminal output
+- Is never sent to GitHub
+- Cannot be seen by any other Linux user (chmod 600)
+- Cannot be overwritten by `git pull` (different directory)
 
 ---
 
-## Setting up GitHub Secrets
+## Installing / updating the token
 
-Go to your repository on GitHub:
-
-**Settings → Secrets and variables → Actions → New repository secret**
-
-Add the following secrets:
-
-### Production (`deploy-vprod.yml`)
-
-| Secret name | Value |
-|-------------|-------|
-| `DISCORD_TOKEN` | Bot token from discord.com/developers/applications |
-| `SSH_HOST` | Server IP address or hostname |
-| `SSH_USER` | Linux user that can run `sudo` on the server |
-| `SSH_KEY` | Private SSH key (contents of `~/.ssh/id_ed25519`, not the `.pub` file) |
-| `SSH_PORT` | *(optional)* SSH port — omit to use the default 22 |
-
-### Dev (`deploy-vdev.yml`)
-
-| Secret name | Value |
-|-------------|-------|
-| `DISCORD_TOKEN_DEV` | A **separate** bot token for a different Discord application |
-| `SSH_HOST_DEV` | Dev server IP or hostname |
-| `SSH_USER_DEV` | Linux user on the dev server |
-| `SSH_KEY_DEV` | Private SSH key for the dev server |
-| `SSH_PORT_DEV` | *(optional)* SSH port |
-
-> **Always use a separate bot application for dev.**  
-> If both environments share a token and Discord resets it, both go down at once.  
-> Two applications means independent tokens, independent resets, zero shared blast radius.
-
----
-
-## Generating an SSH key pair
-
-On your local machine (not the server):
+### First install
 
 ```bash
-ssh-keygen -t ed25519 -C "vprod-github-deploy" -f ~/.ssh/vprod_deploy
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh)
 ```
 
-Two files are created:
-- `~/.ssh/vprod_deploy` — **private key** → paste this into `SSH_KEY` GitHub Secret
-- `~/.ssh/vprod_deploy.pub` — **public key** → add this to the server
+The script prompts you interactively:
+```
+  Enter DISCORD_TOKEN: ████████████████  (input hidden)
+  ✔  Token written to /var/lib/vprod/.env (permissions: 600, owner: vprodbot only)
+```
 
-Add the public key to the server:
+### Rotating after a Discord token reset
 
+**Option A — re-run the installer** (recommended):
 ```bash
-# Replace with your actual server user and IP
-ssh-copy-id -i ~/.ssh/vprod_deploy.pub ubuntu@your.server.ip
-# Or manually:
-cat ~/.ssh/vprod_deploy.pub | ssh ubuntu@your.server.ip 'cat >> ~/.ssh/authorized_keys'
+sudo bash /opt/vprod/scripts/install-vprod.sh
+```
+The script detects the existing install, updates the code, and prompts for a new token. When asked `Overwrite it with a new token?`, answer `y`.
+
+**Option B — edit the file directly**:
+```bash
+sudo -u vprodbot nano /var/lib/vprod/.env
+# Change DISCORD_TOKEN=old  →  DISCORD_TOKEN=new
+# Save and exit
+sudo systemctl restart vprod
+```
+
+**Option C — one-liner** (useful for scripting):
+```bash
+sudo DISCORD_TOKEN=your_new_token bash /opt/vprod/scripts/install-vprod.sh
 ```
 
 ---
 
-## Triggering a deploy
+## Checking the token is set
 
-### Automatic (push to main)
-
-Every push to the `main` branch triggers `deploy-vprod.yml` automatically.
-
-### Manual (token rotation or on-demand)
-
-1. Go to your repo on GitHub
-2. Click **Actions**
-3. Click **Deploy — Production** (or **Deploy — Dev**)
-4. Click **Run workflow** (top right)
-5. Choose options if needed → **Run workflow**
-
-Use this for:
-- Deploying after a token reset
-- Testing the deploy pipeline
-- Deploying a specific commit without merging to main
-
----
-
-## Rotating the token
-
-Discord occasionally invalidates tokens (or you may reset it manually).
-
-1. **Reset the token** — Discord Developer Portal → your application → Bot → Reset Token → copy the new token
-2. **Update the GitHub Secret** — Settings → Secrets → Actions → `DISCORD_TOKEN` → Update → paste new token
-3. **Re-deploy** — Run the `Deploy — Production` workflow manually (see above)
-
-The workflow will overwrite `/var/lib/vprod/.env` with the new token and restart the bot. Takes about 30–60 seconds total.
-
----
-
-## Viewing the token on the server (emergency only)
-
-If you need to check the token directly on the server:
-
+Without revealing the value:
 ```bash
-# Only vprodbot can read this file
+sudo -u vprodbot grep -c 'DISCORD_TOKEN=.' /var/lib/vprod/.env
+# Prints 1 if set, 0 if placeholder/empty
+```
+
+To see the actual value (emergency only):
+```bash
 sudo -u vprodbot cat /var/lib/vprod/.env
 ```
 
-Or to check it's set without revealing the full value:
+---
 
-```bash
-sudo -u vprodbot grep -c DISCORD_TOKEN /var/lib/vprod/.env  # prints 1 if set
+## Why `git pull` is always safe
+
+The data directory and the code directory are completely separate on the filesystem:
+
 ```
+/opt/vprod/          ← git pull touches this (code only)
+/var/lib/vprod/      ← git pull NEVER touches this
+  .env               ← your token, always safe
+  config.json        ← your config, always safe
+  ext_plugins/       ← your plugins, always safe
+  logs/              ← log files
+```
+
+`vmanage --update` runs `git pull` on `/opt/vprod/` — it cannot reach `/var/lib/vprod/`.
 
 ---
 
-## What happens during `git pull` / `vmanage --update`
+## What the bot reads at startup
 
-The data directory (`/var/lib/vprod/`) and the code directory (`/opt/vprod/`) are completely separate.
+The systemd service file (`vprod.service`) contains:
 
-```
-/opt/vprod/      ← git pull touches this
-/var/lib/vprod/  ← git pull NEVER touches this
-  .env           ← your token, always safe
-  config.json    ← your config, always safe
-  ext_plugins/   ← your plugins, always safe
+```ini
+EnvironmentFile=-/var/lib/vprod/.env
 ```
 
-`git pull` on `/opt/vprod/` cannot overwrite `/var/lib/vprod/.env` because they are different directories on the filesystem.
+This tells systemd to read `/var/lib/vprod/.env` and inject each `KEY=value` line as an environment variable before starting the bot. The bot process sees `DISCORD_TOKEN` as a normal env var — it is never logged or printed.
 
 ---
 
-## Local development (no server, no CI)
+## Local development
 
-Use `install-vdev.sh` instead:
+Token handling for local dev is even simpler:
 
 ```bash
 bash scripts/install-vdev.sh
 ```
 
-This prompts you for the token and stores it in `./data/.env` (which is gitignored). No GitHub Secrets, no SSH, no deployment pipeline needed.
+The dev installer prompts for the token and stores it in `./data/.env` (which is gitignored). No systemd, no server, no sudo.
+
+To change the token later:
+```bash
+nano data/.env   # edit DISCORD_TOKEN= line
+# Restart the bot process
+```
+
+---
+
+## Automated Deploys — GitHub Actions (optional)
+
+If you **want** GitHub to deploy automatically on every push to `main` (without you SSHing in), the repo includes workflow files in `.github/workflows/`. This requires adding an SSH key to GitHub Secrets so the runner can reach your server.
+
+This is **entirely optional** — the curl install method above is simpler and does not require any GitHub access to your server.
+
+### When the GitHub Actions approach makes sense
+
+- You have a team pushing code frequently and want zero-touch deploys
+- You want the token rotation workflow (update secret → trigger workflow → done)
+- You're comfortable with GitHub holding a deploy-only SSH key
+
+### Setup (if you want it)
+
+**Required GitHub Secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|--------|-------|
+| `DISCORD_TOKEN` | Bot token from Discord Developer Portal |
+| `SSH_HOST` | Server IP or hostname |
+| `SSH_USER` | Linux user with sudo access |
+| `SSH_KEY` | Private SSH key (paste the private key file contents) |
+| `SSH_PORT` | *(optional)* — omit for port 22 |
+
+For dev, add the same set with `_DEV` suffix.
+
+**Generate a deploy-only SSH key** (on your local machine):
+```bash
+ssh-keygen -t ed25519 -C "vprod-deploy-key" -f ~/.ssh/vprod_deploy
+# Add the public key to the server:
+ssh-copy-id -i ~/.ssh/vprod_deploy.pub your-user@your.server.ip
+# Paste the private key into the SSH_KEY GitHub Secret
+```
+
+Once configured, every push to `main` triggers `deploy-vprod.yml`, which SSHes in and runs `install-vprod.sh` with the token from GitHub Secrets.
+
+### Token rotation with GitHub Actions
+
+1. Reset token on Discord Developer Portal
+2. Update `DISCORD_TOKEN` GitHub Secret
+3. **Actions → Deploy — Production → Run workflow**
+
+The workflow overwrites `/var/lib/vprod/.env` and restarts the bot (~30 seconds total).
