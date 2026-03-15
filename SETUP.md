@@ -2,6 +2,14 @@
 
 This guide walks through everything needed to get vprod running on an Ubuntu server — from creating the Discord application to locking down every file permission.
 
+> **Quick start**: after completing steps 1–3 (Discord app + team), run the one-command installer on your server:
+>
+> ```bash
+> sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/install.sh)
+> ```
+>
+> The script handles every step below (packages → user/group → clone → venv → `.env` → service). Manual steps are still documented below if you prefer full control.
+
 ---
 
 ## Table of Contents
