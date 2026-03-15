@@ -1,34 +1,39 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  install-vdev.sh — Development installer for vprod
+#  install-vdev.sh — Development server installer for vprod
 #  Vantage Discord Bot Framework
 # =============================================================================
 #
-#  Run from inside the repo directory (no sudo needed):
-#      bash scripts/install-vdev.sh
+#  Run as root (or via sudo) on your dev server:
+#      sudo bash scripts/install-vdev.sh
 #
-#  What this does:
-#    1. Checks Python 3.10+ and git are available
-#    2. Creates a Python virtual environment in ./venv
-#    3. Installs all requirements
-#    4. Creates ./data/ with dev config and directory layout
-#    5. Stores your Discord token in ./data/.env (gitignored, chmod 600)
-#    6. Installs vmanage so it works from the dev checkout
-#
-#  Optional overrides:
-#      DISCORD_TOKEN=...       skip the interactive token prompt
-#      PREFIX=?                command prefix (default: !)
-#      PYTHON=python3.12       Python binary to use
-#      SKIP_VMANAGE_LOCAL=1    don't install to ~/.local/bin
+#  Optional environment overrides:
+#      REPO_URL=https://github.com/BigPattyOG/VantageOverlook.git
+#      APP_DIR=/opt/vdev
+#      DATA_DIR=/var/lib/vdev
+#      BOT_USER=vdevbot
+#      ADMIN_GROUP=vdevadmins
+#      SERVICE_NAME=vdev
+#      DISCORD_TOKEN=...   (skip interactive prompt)
+#      FORCE_RECLONE=1     (wipe APP_DIR and re-clone)
+#      SKIP_START=1        (install without starting the service)
 #
 # =============================================================================
 
 set -Eeuo pipefail
 
+# ── defaults ──────────────────────────────────────────────────────────────────
+REPO_URL="${REPO_URL:-https://github.com/BigPattyOG/VantageOverlook.git}"
+APP_DIR="${APP_DIR:-/opt/vdev}"
+DATA_DIR="${DATA_DIR:-/var/lib/vdev}"
+BOT_USER="${BOT_USER:-vdevbot}"
+ADMIN_GROUP="${ADMIN_GROUP:-vdevadmins}"
+SERVICE_NAME="${SERVICE_NAME:-vdev}"
+FORCE_RECLONE="${FORCE_RECLONE:-0}"
+SKIP_START="${SKIP_START:-0}"
 PREFIX="${PREFIX:-!}"
-PYTHON="${PYTHON:-python3}"
-DISCORD_TOKEN="${DISCORD_TOKEN:-}"
-SKIP_VMANAGE_LOCAL="${SKIP_VMANAGE_LOCAL:-0}"
+DESCRIPTION="${DESCRIPTION:-Vantage | Development}"
+ADMIN_USER="${SUDO_USER:-}"
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -40,23 +45,27 @@ fi
 
 # ── pretty output ─────────────────────────────────────────────────────────────
 STEP=0
-TOTAL_STEPS=6
+TOTAL_STEPS=15
 
-_line()    { printf '%*s\n' "${COLUMNS:-72}" '' | tr ' ' '═'; }
+_line() { printf '%*s\n' "${COLUMNS:-72}" '' | tr ' ' '═'; }
 _subline() { printf '%*s\n' "${COLUMNS:-72}" '' | tr ' ' '─'; }
 
 banner() {
   clear || true
   echo -e "${_TEAL}${_B}"
   _line
-  printf '  %-68s\n' "vprod — Development Installer"
+  printf '  %-68s\n' "Vantage | Development Installer"
   printf '  %-68s\n' "Vantage Discord Bot Framework"
   _line
   echo -e "${_R}"
-  echo -e "  ${_DIM}Repo dir  :${_R} ${_B}$(pwd)${_R}"
-  echo -e "  ${_DIM}Data dir  :${_R} $(pwd)/data  ${_TEAL}(token stored here, gitignored)${_R}"
-  echo -e "  ${_DIM}Prefix    :${_R} ${PREFIX}"
-  echo -e "  ${_DIM}Python    :${_R} ${PYTHON}"
+  echo -e "  ${_DIM}Repo        :${_R} ${_B}${REPO_URL}${_R}"
+  echo -e "  ${_DIM}App dir     :${_R} ${APP_DIR}"
+  echo -e "  ${_DIM}Data dir    :${_R} ${DATA_DIR}  ${_TEAL}← token stored here (outside git)${_R}"
+  echo -e "  ${_DIM}Bot user    :${_R} ${BOT_USER}"
+  echo -e "  ${_DIM}Admin group :${_R} ${ADMIN_GROUP}"
+  echo -e "  ${_DIM}Service     :${_R} ${SERVICE_NAME}"
+  [[ -n "${ADMIN_USER}" && "${ADMIN_USER}" != "root" ]] && \
+    echo -e "  ${_DIM}Linux admin :${_R} ${ADMIN_USER}"
   echo
   _line
   echo
@@ -74,6 +83,20 @@ info() { echo -e "  ${_DIM}→${_R}  ${1}"; }
 warn() { echo -e "  ${_YELLOW}⚠${_R}  ${1}" >&2; }
 die()  { echo -e "  ${_RED}✖${_R}  ${1}" >&2; exit 1; }
 
+run_quiet() {
+  local desc="$1"; shift
+  local out; out=$(mktemp); local err; err=$(mktemp)
+  if "$@" >"${out}" 2>"${err}"; then
+    ok "${desc}"
+  else
+    warn "${desc} failed"
+    [[ -s "${out}" ]] && { echo; cat "${out}"; }
+    [[ -s "${err}" ]] && { echo; cat "${err}"; }
+    rm -f "${out}" "${err}"; exit 1
+  fi
+  rm -f "${out}" "${err}"
+}
+
 confirm() {
   local prompt="${1:-Continue?}"; local ans
   read -r -p "  ${prompt} [y/N]: " ans </dev/tty || true
@@ -82,73 +105,159 @@ confirm() {
 
 on_error() {
   local code=$?
-  echo
-  echo -e "${_RED}${_B}Setup stopped at step ${STEP}/${TOTAL_STEPS}.  Exit code: ${code}${_R}"
+  echo; echo -e "${_RED}${_B}Setup stopped at step ${STEP}/${TOTAL_STEPS}.  Exit code: ${code}${_R}"
   echo "Check the output above for the failing step."
   exit "${code}"
 }
 trap on_error ERR
 
-# ── guard: must be run from the repo root ─────────────────────────────────────
-[[ -f launcher.py && -f requirements.txt ]] || \
-  die "Run this script from the vprod repo root (where launcher.py lives)."
-
-REPO_ROOT="$(pwd)"
-
-# ── token validation ──────────────────────────────────────────────────────────
-validate_token_format() {
-  # Discord bot tokens: three base64url segments separated by dots.
-  # Duplicated in scripts/install-vprod.sh and vmanage.py (_TOKEN_RE) — keep in sync.
-  [[ "$1" =~ ^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$ ]]
-}
+# ── guard ─────────────────────────────────────────────────────────────────────
+[[ "${EUID}" -eq 0 ]] || die "Please run with sudo: sudo bash ${BASH_SOURCE[0]}"
 
 # ── step implementations ──────────────────────────────────────────────────────
 
-check_python() {
-  # Verify the requested Python binary exists and is new enough.
-  command -v "${PYTHON}" >/dev/null 2>&1 || \
-    die "'${PYTHON}' not found.  Install Python 3.10+ or set PYTHON=python3.x"
-
-  local pyver
-  pyver=$("${PYTHON}" -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>/dev/null || echo "0.0")
-  local major minor
-  IFS='.' read -r major minor <<< "${pyver}"
-  info "Python ${pyver}"
-  if [[ "${major}" -lt 3 || ( "${major}" -eq 3 && "${minor}" -lt 10 ) ]]; then
-    die "Python 3.10 or newer is required (found ${pyver})."
+check_os() {
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck source=/dev/null
+    . /etc/os-release
+    info "Detected ${PRETTY_NAME:-unknown}"
+    [[ "${ID:-}" == "ubuntu" ]] || warn "This script was written for Ubuntu — proceed with care."
   fi
-  ok "Python ${pyver} ✓"
-
-  command -v git >/dev/null 2>&1 || die "git not found — install it first."
-  ok "git $(git --version | awk '{print $3}') ✓"
+  local pyver
+  pyver=$(python3 -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>/dev/null || echo "0.0")
+  info "Python ${pyver}"
+  [[ "${pyver}" != "0.0" ]] || die "python3 not found — install it first."
 }
 
-create_venv() {
-  if [[ -d venv ]]; then
-    ok "venv already exists — upgrading packages"
-    venv/bin/pip install --quiet --upgrade pip
-    venv/bin/pip install --quiet -r requirements.txt
-    ok "Requirements up to date"
+install_packages() {
+  run_quiet "apt update" apt update
+  run_quiet "install required packages" env DEBIAN_FRONTEND=noninteractive \
+    apt install -y git python3 python3-pip python3-venv build-essential ca-certificates
+}
+
+ensure_group() {
+  if getent group "${ADMIN_GROUP}" >/dev/null; then
+    ok "Group '${ADMIN_GROUP}' already exists"
   else
-    info "Creating virtual environment…"
-    "${PYTHON}" -m venv venv
-    ok "venv created"
-    info "Installing requirements (may take a moment)…"
-    venv/bin/pip install --quiet --upgrade pip
-    venv/bin/pip install --quiet -r requirements.txt
-    ok "Requirements installed"
+    run_quiet "Create group '${ADMIN_GROUP}'" groupadd "${ADMIN_GROUP}"
   fi
+}
+
+ensure_user() {
+  if id "${BOT_USER}" >/dev/null 2>&1; then
+    ok "User '${BOT_USER}' already exists"
+  else
+    run_quiet "Create system user '${BOT_USER}'" \
+      useradd --system --create-home --shell /usr/sbin/nologin "${BOT_USER}"
+  fi
+}
+
+add_admin_to_group() {
+  [[ -z "${ADMIN_USER}" || "${ADMIN_USER}" == "root" ]] && {
+    warn "Could not determine non-root user to add to ${ADMIN_GROUP}"
+    return 0
+  }
+  if id -nG "${ADMIN_USER}" | tr ' ' '\n' | grep -qx "${ADMIN_GROUP}"; then
+    ok "${ADMIN_USER} is already in ${ADMIN_GROUP}"
+  else
+    run_quiet "Add ${ADMIN_USER} to ${ADMIN_GROUP}" usermod -aG "${ADMIN_GROUP}" "${ADMIN_USER}"
+    warn "Log out and back in for the new group to take effect."
+  fi
+}
+
+prepare_repo() {
+  mkdir -p /opt
+  if [[ -e "${APP_DIR}" && "${FORCE_RECLONE}" == "1" ]]; then
+    run_quiet "Remove existing ${APP_DIR}" rm -rf "${APP_DIR}"
+  fi
+
+  if [[ -d "${APP_DIR}/.git" ]]; then
+    ok "Git checkout found at ${APP_DIR}"
+    run_quiet "Mark git dir as safe" git config --global --add safe.directory "${APP_DIR}"
+    run_quiet "Fix ownership" chown -R "${BOT_USER}:${ADMIN_GROUP}" "${APP_DIR}"
+    run_quiet "Fetch latest refs" sudo -u "${BOT_USER}" git -C "${APP_DIR}" fetch --all --prune
+    return 0
+  fi
+
+  [[ -e "${APP_DIR}" ]] && die "${APP_DIR} exists but is not a git repo. Use FORCE_RECLONE=1."
+  run_quiet "Clone repository to ${APP_DIR}" git clone "${REPO_URL}" "${APP_DIR}"
+}
+
+set_permissions() {
+  run_quiet "Set ownership on ${APP_DIR}" chown -R "${BOT_USER}:${ADMIN_GROUP}" "${APP_DIR}"
+  find "${APP_DIR}" -type d -exec chmod 2775 {} \;
+  find "${APP_DIR}" -type f -exec chmod 664 {} \;
+  for f in launcher.py vmanage.py scripts/install-vprod.sh scripts/install-vdev.sh scripts/install.sh; do
+    [[ -f "${APP_DIR}/${f}" ]] && chmod 775 "${APP_DIR}/${f}"
+  done
+  ok "Code directory permissions set (2775 dirs, 664 files, 775 executables)"
 }
 
 prepare_data_dir() {
-  mkdir -p data/ext_plugins data/logs data/guilds data/repos
-  # .gitkeep keeps repos/ tracked so plugins that add repos don't break
-  touch data/repos/.gitkeep
-  ok "data/ directory layout ready"
+  run_quiet "Create ${DATA_DIR}" mkdir -p "${DATA_DIR}"
+  run_quiet "Create ${DATA_DIR}/ext_plugins" mkdir -p "${DATA_DIR}/ext_plugins"
+  run_quiet "Create ${DATA_DIR}/logs" mkdir -p "${DATA_DIR}/logs"
+  run_quiet "Set ownership on ${DATA_DIR}" chown -R "${BOT_USER}:${ADMIN_GROUP}" "${DATA_DIR}"
+  find "${DATA_DIR}" -type d -exec chmod 2775 {} \;
+  find "${DATA_DIR}" -type f -exec chmod 664 {} \;
+  ok "Data directory ready"
+}
+
+ensure_umask() {
+  local profile="/home/${BOT_USER}/.profile"
+  touch "${profile}"; chown "${BOT_USER}:${BOT_USER}" "${profile}"
+  grep -qx 'umask 002' "${profile}" 2>/dev/null && { ok "umask 002 already set"; return; }
+  printf '\numask 002\n' >> "${profile}"
+  ok "Set umask 002 for ${BOT_USER}"
+}
+
+create_venv() {
+  info "Creating virtual environment (may take a minute)…"
+  local pip_out pip_err
+  pip_out=$(mktemp); pip_err=$(mktemp)
+  chown "${BOT_USER}" "${pip_out}" "${pip_err}"
+
+  [[ -d "${APP_DIR}/venv/bin" ]] && find "${APP_DIR}/venv/bin" -type f -exec chmod 775 {} \;
+
+  sudo -u "${BOT_USER}" bash -c "
+    set -Eeuo pipefail
+    cd '${APP_DIR}'
+    python3 -m venv venv >'${pip_out}' 2>'${pip_err}'
+    venv/bin/pip install --upgrade pip >>'${pip_out}' 2>'${pip_err}'
+    venv/bin/pip install -r requirements.txt >>'${pip_out}' 2>'${pip_err}'
+  " || {
+    warn "venv / pip install failed"
+    [[ -s "${pip_out}" ]] && cat "${pip_out}"
+    [[ -s "${pip_err}" ]] && cat "${pip_err}"
+    rm -f "${pip_out}" "${pip_err}"; exit 1
+  }
+  rm -f "${pip_out}" "${pip_err}"
+  find "${APP_DIR}/venv" -type d -exec chmod 2775 {} \;
+  find "${APP_DIR}/venv" -type f -exec chmod 664 {} \;
+  find "${APP_DIR}/venv/bin" -type f -exec chmod 775 {} \;
+  ok "Virtual environment ready"
+}
+
+# ── token handling ─────────────────────────────────────────────────────────────
+#
+# The token is stored in DATA_DIR/.env — OUTSIDE the git checkout.
+# This means:
+#   • git pull can never overwrite it
+#   • Discord's token scanner never sees it in the repo
+#   • systemd reads it via EnvironmentFile= and injects DISCORD_TOKEN
+#
+validate_token_format() {
+  local tok="$1"
+  # Discord bot tokens: three base64url segments separated by dots.
+  # Duplicated in scripts/install-vprod.sh and vmanage.py (_TOKEN_RE) — keep in sync.
+  if [[ "${tok}" =~ ^[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}$ ]]; then
+    return 0
+  fi
+  return 1
 }
 
 write_token() {
-  local env_file="data/.env"
+  local env_file="${DATA_DIR}/.env"
   local token="${DISCORD_TOKEN:-}"
 
   if [[ -f "${env_file}" && -z "${token}" ]]; then
@@ -156,48 +265,50 @@ write_token() {
     warn "${env_file} already exists."
     confirm "Overwrite it with a new token?" || {
       ok "Keeping existing ${env_file}"
-      chmod 600 "${env_file}"
+      chown "${BOT_USER}:${BOT_USER}" "${env_file}"; chmod 600 "${env_file}"
       return 0
     }
   fi
 
   if [[ -z "${token}" ]]; then
     echo
-    info "Your token will be stored in ${REPO_ROOT}/data/.env"
-    info "This path is gitignored — it will NOT be committed."
+    info "The token will be stored in ${env_file}"
+    info "It will NOT be inside the git directory — git pull can never reset it."
     echo
     while true; do
       read -r -s -p "  Enter DISCORD_TOKEN: " token </dev/tty; echo
-      [[ -z "${token}" ]] && { warn "Token cannot be empty.  Try again."; continue; }
+      [[ -z "${token}" ]] && { warn "Token cannot be empty. Try again."; continue; }
       validate_token_format "${token}" && break
       warn "That doesn't look like a valid Discord bot token."
-      warn "Expected format: <24+chars>.<6chars>.<27+chars> (three dot-separated segments)."
-      info "Get your token: https://discord.com/developers/applications"
+      warn "Expected format: <24+chars>.<6chars>.<27+chars> (separated by dots)."
+      info "Get your token from: https://discord.com/developers/applications"
       confirm "Try again?" || break
     done
   fi
 
   if [[ -z "${token}" ]]; then
-    warn "No token provided — writing placeholder."
+    warn "No token provided. Creating placeholder ${env_file}."
     printf 'DISCORD_TOKEN=\n' > "${env_file}"
   else
     printf 'DISCORD_TOKEN=%s\n' "${token}" > "${env_file}"
   fi
+
+  chown "${BOT_USER}:${BOT_USER}" "${env_file}"
   chmod 600 "${env_file}"
-  ok "Token written to ${env_file} (permissions: 600)"
+  ok "Token written to ${env_file} (permissions: 600, owner: ${BOT_USER} only)"
 }
 
 write_config() {
-  local cfg="data/config.json"
-  [[ -f "${cfg}" ]] && { ok "Keeping existing ${cfg}"; return; }
+  local cfg="${DATA_DIR}/config.json"
+  [[ -f "${cfg}" ]] && { ok "Keeping existing config.json"; return; }
 
   cat > "${cfg}" << EOF
 {
-  "name": "vprod-dev",
-  "service_name": "vprod",
+  "name": "Vantage | Development",
+  "service_name": "${SERVICE_NAME}",
   "prefix": "${PREFIX}",
   "owner_ids": [],
-  "description": "vprod — Dev Instance",
+  "description": "${DESCRIPTION}",
   "status": "online",
   "activity": "${PREFIX}help for commands",
   "health_port": 8080,
@@ -206,102 +317,156 @@ write_config() {
   "maintenance_message": ""
 }
 EOF
-  ok "config.json written to data/"
+  chown "${BOT_USER}:${ADMIN_GROUP}" "${cfg}"; chmod 660 "${cfg}"
+  ok "config.json written to ${DATA_DIR}"
 }
 
-install_vmanage_local() {
-  # vmanage.py auto-detects the dev layout (INSTALL_DIR = repo root) when run
-  # from inside the checkout, so no path patching is needed — just make it
-  # executable from convenient locations.
+install_service() {
+  local svc_src="${APP_DIR}/vprod.service"
+  local svc_dest="/etc/systemd/system/${SERVICE_NAME}.service"
+  [[ -f "${svc_src}" ]] || { warn "vprod.service not found — skipping service install"; return; }
 
-  # 1. venv/bin/vmanage — available whenever the venv is activated
-  local venv_link="${REPO_ROOT}/venv/bin/vmanage"
-  [[ -e "${venv_link}" || -L "${venv_link}" ]] && rm -f "${venv_link}"
-  ln -s "${REPO_ROOT}/vmanage.py" "${venv_link}"
-  chmod 755 "${REPO_ROOT}/vmanage.py"
-  ok "vmanage → venv/bin/vmanage  (active when venv is activated)"
+  sed \
+    -e "s|^User=.*|User=${BOT_USER}|" \
+    -e "s|^\(WorkingDirectory=\)/opt/vprod|\1${APP_DIR}|" \
+    -e "s|^\(EnvironmentFile=-\)/var/lib/vprod|\1${DATA_DIR}|" \
+    -e "s|^\(ExecStart=\)/opt/vprod|\1${APP_DIR}|" \
+    -e "s|^\(Environment=VPROD_DATA_DIR=\)/var/lib/vprod|\1${DATA_DIR}|" \
+    "${svc_src}" > "${svc_dest}"
 
-  # 2. ~/.local/bin/vmanage — available system-wide for the current user,
-  #    no sudo required.  Ubuntu adds ~/.local/bin to PATH automatically.
-  if [[ "${SKIP_VMANAGE_LOCAL}" == "1" ]]; then
-    info "Skipping ~/.local/bin install (SKIP_VMANAGE_LOCAL=1)"
-    return
-  fi
-
-  local local_bin="${HOME}/.local/bin"
-  mkdir -p "${local_bin}"
-  local local_link="${local_bin}/vmanage"
-  [[ -e "${local_link}" || -L "${local_link}" ]] && rm -f "${local_link}"
-  ln -s "${REPO_ROOT}/vmanage.py" "${local_link}"
-  ok "vmanage → ~/.local/bin/vmanage  (available without activating venv)"
-
-  # If ~/.local/bin is not yet on PATH (fresh shell), warn the user.
-  if ! echo ":${PATH}:" | grep -q ":${local_bin}:"; then
-    warn "~/.local/bin is not on your current PATH."
-    warn "The vmanage command will be available after you start a new shell, or run:"
-    warn "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-  fi
+  systemctl daemon-reload
+  systemctl enable "${SERVICE_NAME}"
+  ok "Systemd service '${SERVICE_NAME}' installed and enabled"
 }
 
-# ── post-install summary ──────────────────────────────────────────────────────
-print_summary() {
-  echo
-  echo -e "${_TEAL}${_B}"
-  _line
-  printf '  %-68s\n' "✅  Dev setup complete!"
-  _line
-  echo -e "${_R}"
+install_vmanage_bin() {
+  local target="/usr/local/bin/vmanage"
+  [[ -e "${target}" || -L "${target}" ]] && rm -f "${target}"
+  ln -s "${APP_DIR}/vmanage.py" "${target}"
+  chmod 755 "${target}"
+  ok "vmanage installed at ${target}  (→ ${APP_DIR}/vmanage.py)"
+}
 
-  echo -e "  ${_DIM}Start the bot:${_R}"
-  echo -e "    ${_B}venv/bin/python launcher.py start${_R}"
-  echo -e "    ${_B}venv/bin/python launcher.py --debug start${_R}  ${_DIM}(verbose logging)${_R}"
-  echo
-  echo -e "  ${_DIM}Manage via vmanage (works from the repo directory):${_R}"
-  echo -e "    ${_B}vmanage${_R}                 ${_DIM}status dashboard${_R}"
-  echo -e "    ${_B}vmanage --logs${_R}           ${_DIM}stream live logs${_R}"
-  echo -e "    ${_B}vmanage --update${_R}         ${_DIM}git pull + pip upgrade${_R}"
-  echo -e "    ${_B}vmanage --update-token${_R}   ${_DIM}rotate the Discord token${_R}"
-  echo -e "    ${_B}vmanage --motd${_R}           ${_DIM}preview the MOTD panel${_R}"
-  echo
-  echo -e "  ${_DIM}Token file :${_R} data/.env  ${_TEAL}(gitignored, chmod 600)${_R}"
-  echo -e "  ${_DIM}Config     :${_R} data/config.json"
-  echo -e "  ${_DIM}Plugins    :${_R} data/ext_plugins/"
-  echo -e "  ${_DIM}Logs       :${_R} data/logs/vprod.log"
-  echo
-  _line
-  echo
+install_motd() {
+  local motd_dir="/etc/update-motd.d"
+  local motd_script="${motd_dir}/99-${SERVICE_NAME}"
+
+  mkdir -p "${motd_dir}"
+
+  cat > "${motd_script}" << MOTD_EOF
+#!/bin/bash
+# ${SERVICE_NAME} — show bot status on SSH login
+# Installed by install-vdev.sh — safe to delete to disable.
+# Errors are logged to syslog (logger -t ${SERVICE_NAME}-motd) so they never break login.
+if [[ -x /usr/local/bin/vmanage ]]; then
+  /usr/local/bin/vmanage --motd 2> >(logger -t ${SERVICE_NAME}-motd) || true
+fi
+MOTD_EOF
+
+  chmod 755 "${motd_script}"
+  ok "SSH login MOTD script installed at ${motd_script}"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
 # Step inventory (keep in sync with TOTAL_STEPS above):
-#   1  Check Python + git prerequisites
-#   2  Create Python virtual environment
-#   3  Prepare data directory
-#   4  Store Discord token
-#   5  Write bot configuration
-#   6  Install vmanage
+#   1  Check operating system
+#   2  Install system packages
+#   3  Ensure admin group
+#   4  Ensure bot user
+#   5  Add Linux admin to dev group
+#   6  Clone / update repository
+#   7  Set code directory permissions
+#   8  Prepare data directory
+#   9  Set bot-user umask
+#  10  Create Python virtual environment
+#  11  Write Discord token
+#  12  Write bot config
+#  13  Install systemd service
+#  14  Install vmanage on PATH
+#  15  Install SSH login MOTD status script
 main() {
   banner
 
-  step "Check Python + git prerequisites"
-  check_python
+  step "Check operating system"
+  check_os
 
-  step "Create Python virtual environment"
-  create_venv
+  step "Install system packages"
+  install_packages
+
+  step "Ensure admin group (${ADMIN_GROUP})"
+  ensure_group
+
+  step "Ensure bot user (${BOT_USER})"
+  ensure_user
+
+  step "Add Linux admin to dev group"
+  add_admin_to_group
+
+  step "Clone / update repository"
+  prepare_repo
+
+  step "Set code directory permissions"
+  set_permissions
 
   step "Prepare data directory"
   prepare_data_dir
 
-  step "Store Discord token"
+  step "Set bot-user umask"
+  ensure_umask
+
+  step "Create Python virtual environment"
+  create_venv
+
+  step "Write Discord token (stored in ${DATA_DIR}/.env)"
   write_token
 
-  step "Write bot configuration"
+  step "Write bot config (${DATA_DIR}/config.json)"
   write_config
 
-  step "Install vmanage"
-  install_vmanage_local
+  step "Install systemd service"
+  install_service
 
-  print_summary
+  step "Install vmanage on PATH (/usr/local/bin/vmanage)"
+  install_vmanage_bin
+
+  step "Install SSH login MOTD status script"
+  install_motd
+
+  echo
+  echo -e "${_TEAL}${_B}"
+  _line
+  printf '  %-68s\n' "✅  Setup complete!"
+  _line
+  echo -e "${_R}"
+
+  if [[ "${SKIP_START}" != "1" ]]; then
+    info "Starting ${SERVICE_NAME}…"
+    if systemctl start "${SERVICE_NAME}"; then
+      ok "${SERVICE_NAME} started"
+    else
+      warn "Service failed to start — check logs:"
+      echo "    sudo journalctl -u ${SERVICE_NAME} -n 50"
+    fi
+    echo
+  fi
+
+  echo -e "  ${_DIM}View logs   :${_R} ${_B}vmanage --logs${_R}"
+  echo -e "  ${_DIM}Check status:${_R} ${_B}vmanage${_R}"
+  echo -e "  ${_DIM}Update code :${_R} ${_B}vmanage --update${_R}"
+  echo -e "  ${_DIM}Rotate token:${_R} ${_B}vmanage --update-token${_R}"
+  echo -e "  ${_DIM}Token file  :${_R} ${DATA_DIR}/.env  ${_TEAL}(600, ${BOT_USER} only)${_R}"
+  echo -e "  ${_DIM}Config      :${_R} ${DATA_DIR}/config.json"
+  echo -e "  ${_DIM}Ext plugins :${_R} ${DATA_DIR}/ext_plugins/"
+  echo -e "  ${_DIM}MOTD script :${_R} /etc/update-motd.d/99-${SERVICE_NAME}"
+  echo
+
+  if [[ -n "${ADMIN_USER}" && "${ADMIN_USER}" != "root" ]]; then
+    echo
+    warn "Remember: log out and back in as '${ADMIN_USER}' so the"
+    warn "'${ADMIN_GROUP}' group membership takes effect."
+  fi
+  _line
+  echo
 }
 
 main "$@"

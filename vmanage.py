@@ -118,7 +118,7 @@ class BotInstance:
         self.install_dir = INSTALL_DIR
         self.config: Dict[str, Any] = self._load_config()
         self.name: str = self.config.get("name", "vprod")
-        self.service_name: str = "vprod"
+        self.service_name: str = self.config.get("service_name", "vprod")
         self.prefix: str = self.config.get("prefix", "!")
         self.venv_python: Path = INSTALL_DIR / "venv" / "bin" / "python"
         self.venv_pip: Path = INSTALL_DIR / "venv" / "bin" / "pip"

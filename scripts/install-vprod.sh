@@ -32,7 +32,7 @@ SERVICE_NAME="${SERVICE_NAME:-vprod}"
 FORCE_RECLONE="${FORCE_RECLONE:-0}"
 SKIP_START="${SKIP_START:-0}"
 PREFIX="${PREFIX:-!}"
-DESCRIPTION="${DESCRIPTION:-vprod — Vantage Discord Bot}"
+DESCRIPTION="${DESCRIPTION:-Vantage | Production}"
 ADMIN_USER="${SUDO_USER:-}"
 
 # ── ANSI colours ──────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ banner() {
   clear || true
   echo -e "${_TEAL}${_B}"
   _line
-  printf '  %-68s\n' "vprod — Production Installer"
+  printf '  %-68s\n' "Vantage | Production Installer"
   printf '  %-68s\n' "Vantage Discord Bot Framework"
   _line
   echo -e "${_R}"
@@ -305,7 +305,7 @@ write_config() {
 
   cat > "${cfg}" << EOF
 {
-  "name": "${SERVICE_NAME}",
+  "name": "Vantage | Production",
   "service_name": "${SERVICE_NAME}",
   "prefix": "${PREFIX}",
   "owner_ids": [],
@@ -360,13 +360,13 @@ install_motd() {
 
   mkdir -p "${motd_dir}"
 
-  cat > "${motd_script}" << 'MOTD_EOF'
+  cat > "${motd_script}" << MOTD_EOF
 #!/bin/bash
-# vprod — show bot status on SSH login
+# ${SERVICE_NAME} — show bot status on SSH login
 # Installed by install-vprod.sh — safe to delete to disable.
-# Errors are logged to syslog (logger -t vprod-motd) so they never break login.
+# Errors are logged to syslog (logger -t ${SERVICE_NAME}-motd) so they never break login.
 if [[ -x /usr/local/bin/vmanage ]]; then
-  /usr/local/bin/vmanage --motd 2> >(logger -t vprod-motd) || true
+  /usr/local/bin/vmanage --motd 2> >(logger -t ${SERVICE_NAME}-motd) || true
 fi
 MOTD_EOF
 
