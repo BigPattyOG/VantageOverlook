@@ -92,10 +92,18 @@ class VManageView(discord.ui.View):
                 "sudo is not installed. "
                 "Use `vmanage --restart` from the server terminal instead."
             )
-        r = subprocess.run(
-            ["sudo", "-n", "systemctl", "start", "--dry-run", svc],
-            capture_output=True, text=True, timeout=5,
-        )
+        try:
+            r = subprocess.run(
+                ["sudo", "-n", "systemctl", "start", "--dry-run", svc],
+                capture_output=True, text=True, timeout=5,
+            )
+        except subprocess.TimeoutExpired:
+            return False, (
+                "Timed out waiting for `sudo systemctl` to respond. "
+                "The system may be overloaded or sudo is hung."
+            )
+        except OSError as exc:
+            return False, f"Failed to launch `sudo systemctl`: {exc}"
         stderr_lower = r.stderr.lower()
         # sudo prefixes its own error messages with "sudo:" at the start of a line.
         # A service name will never match this pattern.
@@ -158,9 +166,10 @@ class VManageView(discord.ui.View):
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
-        can_control, err_msg = self._probe_service_access(svc)
+        await interaction.response.defer(ephemeral=True)
+        can_control, err_msg = await asyncio.to_thread(self._probe_service_access, svc)
         if not can_control:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=discord.Embed(
                     title="Service Control Unavailable",
                     description=err_msg,
@@ -169,7 +178,7 @@ class VManageView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=discord.Embed(description="Restarting bot service...", color=BLURPLE),
             ephemeral=True,
         )
@@ -190,9 +199,10 @@ class VManageView(discord.ui.View):
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
-        can_control, err_msg = self._probe_service_access(svc)
+        await interaction.response.defer(ephemeral=True)
+        can_control, err_msg = await asyncio.to_thread(self._probe_service_access, svc)
         if not can_control:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=discord.Embed(
                     title="Service Control Unavailable",
                     description=err_msg,
@@ -201,7 +211,7 @@ class VManageView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=discord.Embed(description="Stopping bot service...", color=RED),
             ephemeral=True,
         )
@@ -222,9 +232,10 @@ class VManageView(discord.ui.View):
                 embed=discord.Embed(description=f"{exc}", color=RED), ephemeral=True
             )
             return
-        can_control, err_msg = self._probe_service_access(svc)
+        await interaction.response.defer(ephemeral=True)
+        can_control, err_msg = await asyncio.to_thread(self._probe_service_access, svc)
         if not can_control:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 embed=discord.Embed(
                     title="Service Control Unavailable",
                     description=err_msg,
@@ -233,7 +244,7 @@ class VManageView(discord.ui.View):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_message(
+        await interaction.followup.send(
             embed=discord.Embed(
                 description="Pulling latest code and upgrading dependencies...\nThe bot will restart automatically.",
                 color=GOLD,

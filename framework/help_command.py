@@ -219,8 +219,12 @@ class HelpView(discord.ui.View):
 
     @discord.ui.button(label="Close", style=discord.ButtonStyle.danger, row=1)
     async def close_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
-        await interaction.message.delete()
+        await interaction.response.defer()
         self.stop()
+        try:
+            await interaction.message.delete()
+        except discord.HTTPException:
+            pass
 
     async def on_timeout(self) -> None:
         for child in self.children:
