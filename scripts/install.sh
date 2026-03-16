@@ -74,9 +74,13 @@ info() { printf '  [..] %s\n' "$1"; }
 warn() { printf '  [!!] %s\n' "$1" >&2; }
 die()  { printf '  [xx] %s\n' "$1" >&2; exit 1; }
 
+json_escape() {
+    python3 -c 'import json,sys; print(json.dumps(sys.argv[1])[1:-1], end="")' "$1"
+}
+
 run_quiet() {
     local desc="$1"; shift
-    if "$@" >"$_TMPOUT" 2>"$_TMPERR"; then
+    if "$@" </dev/null >"$_TMPOUT" 2>"$_TMPERR"; then
         ok "$desc"
     else
         warn "$desc failed"
@@ -263,7 +267,7 @@ create_venv() {
         python3 -m venv venv >'$pip_out' 2>'$pip_err'
         venv/bin/pip install --upgrade pip >>'$pip_out' 2>>'$pip_err'
         venv/bin/pip install -r requirements.txt >>'$pip_out' 2>>'$pip_err'
-    " || {
+    " </dev/null || {
         warn "venv or dependency install failed"
         [[ -s "$pip_out" ]] && { echo; echo "----- stdout -----"; cat "$pip_out"; }
         [[ -s "$pip_err" ]] && { echo; echo "----- stderr -----"; cat "$pip_err"; }
@@ -328,17 +332,17 @@ write_config() {
         return 0
     fi
 
-    cat > "$cfg" << EOF
-{
-  "name": "$CONFIG_NAME",
-  "service_name": "$SERVICE_NAME",
-  "prefix": "$PREFIX",
-  "owner_ids": [],
-  "description": "$DESCRIPTION",
-  "status": "$STATUS_TEXT",
-  "activity": "$ACTIVITY_TEXT"
-}
-EOF
+    {
+        printf '{\n'
+        printf '  "name": "%s",\n'         "$(json_escape "$CONFIG_NAME")"
+        printf '  "service_name": "%s",\n' "$(json_escape "$SERVICE_NAME")"
+        printf '  "prefix": "%s",\n'       "$(json_escape "$PREFIX")"
+        printf '  "owner_ids": [],\n'
+        printf '  "description": "%s",\n'  "$(json_escape "$DESCRIPTION")"
+        printf '  "status": "%s",\n'       "$(json_escape "$STATUS_TEXT")"
+        printf '  "activity": "%s"\n'      "$(json_escape "$ACTIVITY_TEXT")"
+        printf '}\n'
+    } > "$cfg"
 
     chown "$BOT_USER:$ADMIN_GROUP" "$cfg"
     chmod 660 "$cfg"
