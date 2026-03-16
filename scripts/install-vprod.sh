@@ -83,6 +83,16 @@ info() { echo -e "  ${_DIM}→${_R}  ${1}"; }
 warn() { echo -e "  ${_YELLOW}⚠${_R}  ${1}" >&2; }
 die()  { echo -e "  ${_RED}✖${_R}  ${1}" >&2; exit 1; }
 
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "${s}"
+}
+
 run_quiet() {
   local desc="$1"; shift
   local out; out=$(mktemp); local err; err=$(mktemp)
@@ -223,9 +233,9 @@ create_venv() {
   sudo -u "${BOT_USER}" bash -c "
     set -Eeuo pipefail
     cd '${APP_DIR}'
-    python3 -m venv venv >'${pip_out}' 2>'${pip_err}'
-    venv/bin/pip install --upgrade pip >>'${pip_out}' 2>'${pip_err}'
-    venv/bin/pip install -r requirements.txt >>'${pip_out}' 2>'${pip_err}'
+    python3 -m venv venv >'${pip_out}' 2>>'${pip_err}'
+    venv/bin/pip install --upgrade pip >>'${pip_out}' 2>>'${pip_err}'
+    venv/bin/pip install -r requirements.txt >>'${pip_out}' 2>>'${pip_err}'
   " </dev/null || {
     warn "venv / pip install failed"
     [[ -s "${pip_out}" ]] && cat "${pip_out}"
@@ -280,7 +290,7 @@ write_token() {
       read -r -s -p "  Enter DISCORD_TOKEN: " token </dev/tty 2>/dev/null || {
         echo
         warn "Cannot read from terminal — set the token before running:"
-        warn "  DISCORD_TOKEN='your-token' curl -fsSL ${REPO_URL%%.git}/raw/main/scripts/install-vprod.sh | sudo bash"
+        warn "  curl -fsSL ${REPO_URL%%.git}/raw/main/scripts/install-vprod.sh | sudo env DISCORD_TOKEN='your-token' bash"
         exit 1
       }
       echo
@@ -312,12 +322,12 @@ write_config() {
   {
     printf '{\n'
     printf '  "name": "Vantage | Production",\n'
-    printf '  "service_name": "%s",\n'              "${SERVICE_NAME}"
-    printf '  "prefix": "%s",\n'                    "${PREFIX}"
+    printf '  "service_name": "%s",\n'              "$(json_escape "${SERVICE_NAME}")"
+    printf '  "prefix": "%s",\n'                    "$(json_escape "${PREFIX}")"
     printf '  "owner_ids": [],\n'
-    printf '  "description": "%s",\n'               "${DESCRIPTION}"
+    printf '  "description": "%s",\n'               "$(json_escape "${DESCRIPTION}")"
     printf '  "status": "online",\n'
-    printf '  "activity": "%shelp for commands",\n' "${PREFIX}"
+    printf '  "activity": "%shelp for commands",\n' "$(json_escape "${PREFIX}")"
     printf '  "health_port": 8080,\n'
     printf '  "health_host": "0.0.0.0",\n'
     printf '  "maintenance": false,\n'

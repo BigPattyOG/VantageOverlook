@@ -74,6 +74,16 @@ info() { printf '  [..] %s\n' "$1"; }
 warn() { printf '  [!!] %s\n' "$1" >&2; }
 die()  { printf '  [xx] %s\n' "$1" >&2; exit 1; }
 
+json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "${s}"
+}
+
 run_quiet() {
     local desc="$1"; shift
     if "$@" </dev/null >"$_TMPOUT" 2>"$_TMPERR"; then
@@ -330,13 +340,13 @@ write_config() {
 
     {
         printf '{\n'
-        printf '  "name": "%s",\n'         "$CONFIG_NAME"
-        printf '  "service_name": "%s",\n' "$SERVICE_NAME"
-        printf '  "prefix": "%s",\n'       "$PREFIX"
+        printf '  "name": "%s",\n'         "$(json_escape "$CONFIG_NAME")"
+        printf '  "service_name": "%s",\n' "$(json_escape "$SERVICE_NAME")"
+        printf '  "prefix": "%s",\n'       "$(json_escape "$PREFIX")"
         printf '  "owner_ids": [],\n'
-        printf '  "description": "%s",\n'  "$DESCRIPTION"
-        printf '  "status": "%s",\n'       "$STATUS_TEXT"
-        printf '  "activity": "%s"\n'      "$ACTIVITY_TEXT"
+        printf '  "description": "%s",\n'  "$(json_escape "$DESCRIPTION")"
+        printf '  "status": "%s",\n'       "$(json_escape "$STATUS_TEXT")"
+        printf '  "activity": "%s"\n'      "$(json_escape "$ACTIVITY_TEXT")"
         printf '}\n'
     } > "$cfg"
 
