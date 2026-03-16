@@ -84,13 +84,7 @@ warn() { echo -e "  ${_YELLOW}⚠${_R}  ${1}" >&2; }
 die()  { echo -e "  ${_RED}✖${_R}  ${1}" >&2; exit 1; }
 
 json_escape() {
-  local s="$1"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  printf '%s' "${s}"
+  python3 -c 'import json,sys; print(json.dumps(sys.argv[1])[1:-1], end="")' "$1"
 }
 
 run_quiet() {
