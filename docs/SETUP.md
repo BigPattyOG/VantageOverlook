@@ -34,7 +34,7 @@ The bot automatically fetches all accepted team members on startup and treats th
 SSH into your server, then run the one-line installer:
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh)
+curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh | sudo bash
 ```
 
 The script will:

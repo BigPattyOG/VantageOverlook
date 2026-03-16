@@ -31,7 +31,7 @@ discord.com/developers  ──→  You copy the token to your clipboard
                                         │
                         SSH into your server
                                         │
-              sudo bash <(curl -fsSL …/install-vprod.sh)
+              curl -fsSL …/install-vprod.sh | sudo bash
                                         │
                      Script prompts: "Enter DISCORD_TOKEN:"
                                         │
@@ -56,7 +56,7 @@ The token:
 ### First install
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh)
+curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh | sudo bash
 ```
 
 The script prompts you interactively:
