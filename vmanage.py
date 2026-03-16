@@ -106,12 +106,12 @@ def die(msg: str) -> None:
 # ── ASCII banner ───────────────────────────────────────────────────────────────
 
 _BANNER_LINES = [
-    "  ██╗   ██╗██████╗ ██████╗  ██████╗ ██████╗ ",
-    "  ██║   ██║██╔══██╗██╔══██╗██╔═══██╗██╔══██╗",
-    "  ██║   ██║██████╔╝██████╔╝██║   ██║██║  ██║",
-    "  ╚██╗ ██╔╝██╔═══╝ ██╔══██╗██║   ██║██║  ██║",
-    "   ╚████╔╝ ██║     ██║  ██║╚██████╔╝██████╔╝",
-    "    ╚═══╝  ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ",
+    "  ██╗   ██╗ █████╗ ███╗   ██╗████████╗ █████╗  ██████╗ ███████╗",
+    "  ██║   ██║██╔══██╗████╗  ██║╚══██╔══╝██╔══██╗██╔════╝ ██╔════╝",
+    "  ██║   ██║███████║██╔██╗ ██║   ██║   ███████║██║  ███╗█████╗  ",
+    "  ╚██╗ ██╔╝██╔══██║██║╚██╗██║   ██║   ██╔══██║██║   ██║██╔══╝  ",
+    "   ╚████╔╝ ██║  ██║██║ ╚████║   ██║   ██║  ██║╚██████╔╝███████╗",
+    "    ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝ ╚══════╝",
 ]
 
 
@@ -616,9 +616,61 @@ def do_plugins(bot: BotInstance, debug: bool = False) -> None:
 
 # ── MOTD status block ─────────────────────────────────────────────────────────
 
+# Sentinel returned by _count_apt_updates() when apt is installed but the
+# update count could not be determined (dpkg lock, transient error, timeout…).
+_APT_UNKNOWN: int = -1
+
+
+def _count_apt_updates() -> Optional[int]:
+    """Return the number of upgradable packages.
+
+    Return values:
+    - Non-negative ``int``: number of packages with available upgrades.
+    - ``_APT_UNKNOWN`` (-1): apt is installed but the count could not be
+      determined (cache parse error, apt-get failure, dpkg lock, timeout,
+      or any other transient error).
+    - ``None``: ``apt-get`` is not installed on this system.
+
+    Uses ``/var/lib/update-notifier/updates-available`` (written by
+    ``apt-get update`` / the ``update-notifier-common`` package) when present
+    so that the MOTD script does not trigger a slow ``apt list`` call on every
+    SSH login.  Falls back to a quick ``apt-get -s upgrade`` count if the
+    cache file is missing.
+    """
+    if not shutil.which("apt-get"):
+        return None
+
+    # Fast path: pre-computed cache file written by apt hooks.
+    cache_file = Path("/var/lib/update-notifier/updates-available")
+    if cache_file.exists():
+        try:
+            text = cache_file.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                parts = line.split()
+                if parts and parts[0].isdigit():
+                    return int(parts[0])
+        except Exception:
+            pass  # fall through to the slow path
+
+    # Slow fallback: simulate an upgrade and count "Inst" lines.
+    # Use -q (not -qq) so that "Inst ..." lines are not suppressed.
+    try:
+        r = subprocess.run(
+            ["apt-get", "--simulate", "-q", "upgrade"],
+            capture_output=True, text=True, timeout=30,
+            env={"DEBIAN_FRONTEND": "noninteractive", "PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+        )
+        if r.returncode != 0:
+            return _APT_UNKNOWN
+        count = sum(1 for line in r.stdout.splitlines() if line.startswith("Inst "))
+        return count
+    except Exception:
+        return _APT_UNKNOWN
+
+
 def do_motd(bot: BotInstance) -> None:
     """Print a rich status panel for display at SSH login (/etc/update-motd.d/)."""
-    W    = 68
+    W    = 70
     sep  = teal("━" * W)
     hsep = dim("─" * W)
     LW   = 16   # label column width
@@ -665,7 +717,6 @@ def do_motd(bot: BotInstance) -> None:
 
     commit = bot.git_commit()
     if commit:
-        # Trim to fit: "  <label>  <hash> <msg>" — hash is ~7 chars, rest is subject
         max_commit = W - LW - 4
         display_commit = commit if len(commit) <= max_commit else commit[:max_commit - 1] + "…"
         print(f"  {'Commit':<{LW}} {dim(display_commit)}")
@@ -700,7 +751,7 @@ def do_motd(bot: BotInstance) -> None:
         print(f"  {'Maintenance':<{LW}} {maint_str}")
 
     if bot.has_token():
-        print(f"  {'Token':<{LW}} {teal('set ✓')}")
+        print(f"  {'Token':<{LW}} {teal('set')}")
     else:
         print(f"  {'Token':<{LW}} {red('NOT SET')}  {dim('→ vmanage --update-token')}")
 
@@ -722,6 +773,34 @@ def do_motd(bot: BotInstance) -> None:
     print(f"  {'Data / token':<{LW}} {dim(str(DATA_DIR))}")
     print()
 
+    # ── System updates ────────────────────────────────────────────────────────
+    print(f"  {bold('System')}")
+    print(f"  {hsep}")
+
+    # Reboot required?
+    reboot_required = Path("/var/run/reboot-required").exists()
+    if reboot_required:
+        print(f"  {'Reboot':<{LW}} {yellow(bold('REQUIRED'))}  {dim('→ sudo reboot')}")
+    else:
+        print(f"  {'Reboot':<{LW}} {teal('not required')}")
+
+    # Available apt package updates
+    update_count = _count_apt_updates()
+    if update_count is None:
+        print(f"  {'Updates':<{LW}} {dim('apt not installed')}")
+    elif update_count == _APT_UNKNOWN:
+        print(f"  {'Updates':<{LW}} {dim('check unavailable')}")
+    elif update_count == 0:
+        print(f"  {'Updates':<{LW}} {teal('up to date')}")
+    else:
+        noun = "update" if update_count == 1 else "updates"
+        print(
+            f"  {'Updates':<{LW}} {yellow(bold(str(update_count) + ' ' + noun + ' available'))}"
+            f"  {dim('→ sudo apt upgrade')}"
+        )
+
+    print()
+
     # ── Recent errors ─────────────────────────────────────────────────────────
     print(f"  {bold('Recent Errors')}")
     print(f"  {hsep}")
@@ -730,7 +809,7 @@ def do_motd(bot: BotInstance) -> None:
         for ts, msg in errors:
             print(f"  {red(ts)}  {msg}")
     else:
-        print(f"  {teal('no errors in journal ✓')}")
+        print(f"  {teal('no errors in journal')}")
     print()
 
     # ── Commands quick-reference ──────────────────────────────────────────────

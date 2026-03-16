@@ -351,26 +351,63 @@ install_vmanage_bin() {
 }
 
 install_motd() {
-  # Write an update-motd.d script that shows a compact bot-status line at SSH
+  # Write an update-motd.d script that shows the Vantage status panel at SSH
   # login.  Scripts in /etc/update-motd.d/ are run by PAM as root on each
   # interactive login; their stdout is prepended to the MOTD.
+  #
+  # We also disable the default Ubuntu MOTD fragments (news feed, update
+  # counts, etc.) so that only the Vantage panel is shown.
   local motd_dir="/etc/update-motd.d"
   local motd_script="${motd_dir}/99-${SERVICE_NAME}"
 
   mkdir -p "${motd_dir}"
 
+  # ── Disable default Ubuntu MOTD fragments ────────────────────────────────
+  # These are chmod -x so PAM skips them; the files are kept so that future
+  # Ubuntu updates do not re-enable them automatically.
+  local default_fragments=(
+    "00-header"
+    "10-help-text"
+    "50-motd-news"
+    "80-esm"
+    "85-fwupd"
+    "88-esm-announce"
+    "90-updates-available"
+    "91-contract-ua-esm-status"
+    "91-release-upgrade"
+    "92-unattended-upgrades"
+    "95-hwe-eol"
+    "98-reboot-required"
+  )
+  for fragment in "${default_fragments[@]}"; do
+    local fpath="${motd_dir}/${fragment}"
+    if [[ -f "${fpath}" && -x "${fpath}" ]]; then
+      chmod -x "${fpath}"
+    fi
+  done
+
+  # Clear the static /etc/motd file (Ubuntu writes Ubuntu version text there).
+  : > /etc/motd
+
+  # Disable the motd-news systemd timer if present (avoids background fetches).
+  if systemctl list-unit-files motd-news.timer &>/dev/null; then
+    systemctl disable --now motd-news.timer 2>/dev/null || true
+  fi
+
+  # ── Write our MOTD script ─────────────────────────────────────────────────
   cat > "${motd_script}" << MOTD_EOF
 #!/bin/bash
-# ${SERVICE_NAME} — show bot status on SSH login
-# Installed by install-vprod.sh — safe to delete to disable.
-# Errors are logged to syslog (logger -t ${SERVICE_NAME}-motd) so they never break login.
+# ${SERVICE_NAME} — Vantage bot status panel shown on SSH login
+# Installed by install-vprod.sh — delete this file to disable.
+# Errors are logged to syslog so a broken bot never blocks SSH login.
 if [[ -x /usr/local/bin/vmanage ]]; then
-  /usr/local/bin/vmanage --motd 2> >(logger -t ${SERVICE_NAME}-motd) || true
+  /usr/local/bin/vmanage --motd 2> >(logger -t "${SERVICE_NAME}-motd") || true
 fi
 MOTD_EOF
 
   chmod 755 "${motd_script}"
   ok "SSH login MOTD script installed at ${motd_script}"
+  ok "Default Ubuntu MOTD fragments disabled"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
