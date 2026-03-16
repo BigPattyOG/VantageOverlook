@@ -11,7 +11,7 @@ Self-hosted Discord bot framework. Modular, runs on Ubuntu via systemd.
 SSH into your server and run one command. The script handles everything — packages, system user, venv, permissions, config, systemd service — and prompts you for the Discord token at the end.
 
 ```bash
-sudo bash <(curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh)
+curl -fsSL https://raw.githubusercontent.com/BigPattyOG/VantageOverlook/main/scripts/install-vprod.sh | sudo bash
 ```
 
 Your token is stored in `/var/lib/vprod/.env` (chmod 600, owned by the bot user only). It never touches GitHub.
