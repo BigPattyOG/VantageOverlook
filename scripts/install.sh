@@ -76,7 +76,7 @@ die()  { printf '  [xx] %s\n' "$1" >&2; exit 1; }
 
 run_quiet() {
     local desc="$1"; shift
-    if "$@" >"$_TMPOUT" 2>"$_TMPERR"; then
+    if "$@" </dev/null >"$_TMPOUT" 2>"$_TMPERR"; then
         ok "$desc"
     else
         warn "$desc failed"
@@ -263,7 +263,7 @@ create_venv() {
         python3 -m venv venv >'$pip_out' 2>'$pip_err'
         venv/bin/pip install --upgrade pip >>'$pip_out' 2>>'$pip_err'
         venv/bin/pip install -r requirements.txt >>'$pip_out' 2>>'$pip_err'
-    " || {
+    " </dev/null || {
         warn "venv or dependency install failed"
         [[ -s "$pip_out" ]] && { echo; echo "----- stdout -----"; cat "$pip_out"; }
         [[ -s "$pip_err" ]] && { echo; echo "----- stderr -----"; cat "$pip_err"; }
@@ -328,17 +328,17 @@ write_config() {
         return 0
     fi
 
-    cat > "$cfg" << EOF
-{
-  "name": "$CONFIG_NAME",
-  "service_name": "$SERVICE_NAME",
-  "prefix": "$PREFIX",
-  "owner_ids": [],
-  "description": "$DESCRIPTION",
-  "status": "$STATUS_TEXT",
-  "activity": "$ACTIVITY_TEXT"
-}
-EOF
+    {
+        printf '{\n'
+        printf '  "name": "%s",\n'         "$CONFIG_NAME"
+        printf '  "service_name": "%s",\n' "$SERVICE_NAME"
+        printf '  "prefix": "%s",\n'       "$PREFIX"
+        printf '  "owner_ids": [],\n'
+        printf '  "description": "%s",\n'  "$DESCRIPTION"
+        printf '  "status": "%s",\n'       "$STATUS_TEXT"
+        printf '  "activity": "%s"\n'      "$ACTIVITY_TEXT"
+        printf '}\n'
+    } > "$cfg"
 
     chown "$BOT_USER:$ADMIN_GROUP" "$cfg"
     chmod 660 "$cfg"

@@ -86,7 +86,7 @@ die()  { echo -e "  ${_RED}✖${_R}  ${1}" >&2; exit 1; }
 run_quiet() {
   local desc="$1"; shift
   local out; out=$(mktemp); local err; err=$(mktemp)
-  if "$@" >"${out}" 2>"${err}"; then
+  if "$@" </dev/null >"${out}" 2>"${err}"; then
     ok "${desc}"
   else
     warn "${desc} failed"
@@ -225,7 +225,7 @@ create_venv() {
     python3 -m venv venv >'${pip_out}' 2>'${pip_err}'
     venv/bin/pip install --upgrade pip >>'${pip_out}' 2>'${pip_err}'
     venv/bin/pip install -r requirements.txt >>'${pip_out}' 2>'${pip_err}'
-  " || {
+  " </dev/null || {
     warn "venv / pip install failed"
     [[ -s "${pip_out}" ]] && cat "${pip_out}"
     [[ -s "${pip_err}" ]] && cat "${pip_err}"
@@ -276,7 +276,13 @@ write_token() {
     info "It will NOT be inside the git directory — git pull can never reset it."
     echo
     while true; do
-      read -r -s -p "  Enter DISCORD_TOKEN: " token </dev/tty; echo
+      read -r -s -p "  Enter DISCORD_TOKEN: " token </dev/tty 2>/dev/null || {
+        echo
+        warn "Cannot read from terminal — set the token before running:"
+        warn "  DISCORD_TOKEN='your-token' curl -fsSL ${REPO_URL%%.git}/raw/main/scripts/install-vdev.sh | sudo bash"
+        exit 1
+      }
+      echo
       [[ -z "${token}" ]] && { warn "Token cannot be empty. Try again."; continue; }
       validate_token_format "${token}" && break
       warn "That doesn't look like a valid Discord bot token."
@@ -302,21 +308,21 @@ write_config() {
   local cfg="${DATA_DIR}/config.json"
   [[ -f "${cfg}" ]] && { ok "Keeping existing config.json"; return; }
 
-  cat > "${cfg}" << EOF
-{
-  "name": "Vantage | Development",
-  "service_name": "${SERVICE_NAME}",
-  "prefix": "${PREFIX}",
-  "owner_ids": [],
-  "description": "${DESCRIPTION}",
-  "status": "online",
-  "activity": "${PREFIX}help for commands",
-  "health_port": 8080,
-  "health_host": "127.0.0.1",
-  "maintenance": false,
-  "maintenance_message": ""
-}
-EOF
+  {
+    printf '{\n'
+    printf '  "name": "Vantage | Development",\n'
+    printf '  "service_name": "%s",\n'              "${SERVICE_NAME}"
+    printf '  "prefix": "%s",\n'                    "${PREFIX}"
+    printf '  "owner_ids": [],\n'
+    printf '  "description": "%s",\n'               "${DESCRIPTION}"
+    printf '  "status": "online",\n'
+    printf '  "activity": "%shelp for commands",\n' "${PREFIX}"
+    printf '  "health_port": 8080,\n'
+    printf '  "health_host": "127.0.0.1",\n'
+    printf '  "maintenance": false,\n'
+    printf '  "maintenance_message": ""\n'
+    printf '}\n'
+  } > "${cfg}"
   chown "${BOT_USER}:${ADMIN_GROUP}" "${cfg}"; chmod 660 "${cfg}"
   ok "config.json written to ${DATA_DIR}"
 }
@@ -392,15 +398,15 @@ install_motd() {
   fi
 
   # ── Write our MOTD script ─────────────────────────────────────────────────
-  cat > "${motd_script}" << MOTD_EOF
-#!/bin/bash
-# ${SERVICE_NAME} — Vantage bot status panel shown on SSH login
-# Installed by install-vdev.sh — delete this file to disable.
-# Errors are logged to syslog so a broken bot never blocks SSH login.
-if [[ -x /usr/local/bin/vmanage ]]; then
-  /usr/local/bin/vmanage --motd 2> >(logger -t "${SERVICE_NAME}-motd") || true
-fi
-MOTD_EOF
+  {
+    printf '#!/bin/bash\n'
+    printf '# %s — Vantage bot status panel shown on SSH login\n'           "${SERVICE_NAME}"
+    printf '# Installed by install-vdev.sh — delete this file to disable.\n'
+    printf '# Errors are logged to syslog so a broken bot never blocks SSH login.\n'
+    printf 'if [[ -x /usr/local/bin/vmanage ]]; then\n'
+    printf '  /usr/local/bin/vmanage --motd 2> >(logger -t "%s-motd") || true\n' "${SERVICE_NAME}"
+    printf 'fi\n'
+  } > "${motd_script}"
 
   chmod 755 "${motd_script}"
   ok "SSH login MOTD script installed at ${motd_script}"
